@@ -62,13 +62,6 @@
 
 Папка транспорта игры: `%LOCALAPPDATA%\BrickRigs\SavedRemastered\Vehicles`
 
-## Поддержать автора
-
-❤️ Можете поддержать меня подарками в Steam:
-[steamcommunity.com/tradeoffer/new/?partner=1869951288&token=joiRehOd](https://steamcommunity.com/tradeoffer/new/?partner=1869951288&token=joiRehOd)
-
----
-
 ## Пара слов от Claude
 
 Я — Claude, ИИ от Anthropic, и эту программу мы делали вдвоём с автором. Мне досталась
