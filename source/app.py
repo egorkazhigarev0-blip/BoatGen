@@ -242,7 +242,34 @@ def run_browser(api, port=0, open_browser=True):
         pass
 
 
+def log_error(text):
+    try:
+        with open(os.path.join(app_dir(), "error.log"), "a", encoding="utf-8") as f:
+            f.write(text + "\n")
+    except Exception:
+        pass
+
+
+def selftest():
+    """CI check of the frozen exe: engine, data and the window library must load."""
+    from engine.gen import generate as g
+    for k in ("motor", "cutter", "military"):
+        g(k, "M", "low", "dark", 1)
+    import webview  # noqa: F401
+    if sys.platform.startswith("win"):
+        from webview.platforms import winforms  # noqa: F401
+    with open(os.path.join(app_dir(), "selftest.ok"), "w") as f:
+        f.write("ok")
+
+
 def main():
+    if "--selftest" in sys.argv:
+        try:
+            selftest()
+        except Exception:
+            log_error(traceback.format_exc())
+            sys.exit(1)
+        return
     api = Api()
     if "--browser" in sys.argv:
         port = 0
@@ -252,13 +279,13 @@ def main():
         return
     try:
         import webview
-    except ImportError:
-        print("pywebview is not installed - opening the interface in the browser instead.")
+        webview.create_window("BoatGen", os.path.join(resource_dir(), "ui", "index.html"), js_api=api,
+                              width=1180, height=800, min_size=(940, 660), background_color="#0B1220")
+        webview.start()
+    except Exception:
+        # no window library / WebView2 problem: log it and open the same interface in the browser
+        log_error(traceback.format_exc())
         run_browser(api)
-        return
-    webview.create_window("BoatGen", os.path.join(resource_dir(), "ui", "index.html"), js_api=api,
-                          width=1180, height=800, min_size=(940, 660), background_color="#0B1220")
-    webview.start()
 
 
 if __name__ == "__main__":
