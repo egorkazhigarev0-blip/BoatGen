@@ -307,7 +307,8 @@ class Builder:
                 K.rod((X0, s * (s0 + 10 * self.scale), zs0 - 6), (X0 - 18, s * (s0 - 32 * self.scale), zs0 - 6),
                       30 * self.scale, P["collar"], "Foam", extend=4)
         K.box(X0 - 3, X0, -c0, c0, zc0, zs0, P["hull"], self.hm)
-        K.box(X0 - 3.5, X0 - 3, -c0 + 4, c0 - 4, zc0 + 2, zc0 + 12, P["boot"], self.hm)
+        if self.eq:
+            K.box(X0 - 3.5, X0 - 3, -c0 + 4, c0 - 4, zc0 + 2, zc0 + 12, P["boot"], self.hm)
         K.weld = chunk_of[len(st) - 2]
         sa = (ln.X1 - 5, 0.0, ln.keel_z(ln.X1 - 5))
         sb = (ln.X1 + 3, 0.0, ln.sheer_z(ln.X1) + 2)
@@ -589,8 +590,10 @@ class Builder:
         zj = max(0.30 * ln.D, ln.chine_z(X0) * 0.5 + 12)
         for s in (1, -1):
             yj = s * 0.25 * ln.hw
-            K.box(X0 - 4, X0, yj - 12, yj + 12, zj - 12, zj + 12, STEEL, "Aluminium")
-            t = K.obox((X0 - 4 - 11.25, yj, zj), (0, 0, -1), (1, 0, 0), (18, 18, 22.5), (44, 44, 46, 255), "Plastic",
+            d = 4 if self.eq else 0
+            if d:
+                K.box(X0 - 4, X0, yj - 12, yj + 12, zj - 12, zj + 12, STEEL, "Aluminium")
+            t = K.obox((X0 - d - 11.25, yj, zj), (0, 0, -1), (1, 0, 0), (18, 18, 22.5), (44, 44, 46, 255), "Plastic",
                        "ThrusterBrick", extra={"InputScale": 15.0})
             self.main_thr.append((t, "jet"))
 
@@ -677,7 +680,9 @@ class Builder:
                     (1, 0, 0.8), 3.0, fr, "Aluminium", overlap=1.0)
             if self.eq >= 2:
                 K.rod((cx1 - 6, s * 0.5 * cy, zs + 6), (cx1 - 26, s * 0.3 * cy, zs + 33), 1.6, fr, "Steel")
-        K.plate((cx1, -3, zs), (cx1, 3, zs), (wx, -3, zr), (wx, 3, zr), (1, 0, 0.8), 3.0, fr, "Aluminium", overlap=1.0)
+        if self.eq:
+            K.plate((cx1, -3, zs), (cx1, 3, zs), (wx, -3, zr), (wx, 3, zr), (1, 0, 0.8), 3.0, fr, "Aluminium",
+                    overlap=1.0)
         K.box(cx0 - 2, wx + 4, -cyt + 4, cyt - 4, zr, zr + 3, P["roof"], "Aluminium")
         for s in (1, -1):
             y0, y1 = sorted((s * (cyt - 4), s * (cyt + 4)))
