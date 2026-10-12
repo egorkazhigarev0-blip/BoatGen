@@ -87,7 +87,7 @@ class Lines:
         self.Hk = 0.785 * D
         self.c0 = 0.875 * hw
         self.dr0 = dr0
-        self.rise = D * rng.uniform(0.22, 0.32)
+        self.rise = D * rng.uniform(0.12, 0.42)
         self.flare = 5.0 * hw / 160.0
 
     def keel_z(self, x):
@@ -163,6 +163,9 @@ class Builder:
         for k in ("cabin", "cabin_d"):
             P[k] = tuple(max(0, min(255, int(c + t))) for c in P[k][:3]) + (255,)
         P["roof"] = rgba((222, 224, 226)) if sty["two_tone"] else P["cabin_d"]
+        h = sty["hull_tint"]
+        for k in ("hull", "hull_low"):
+            P[k] = tuple(max(0, min(255, int(c + h))) for c in P[k][:3]) + (255,)
         self.res = RES[res]
         self.eq = EQUIP[detail]
         self.hm = "Aluminium" if kind == "military" else "Plastic"     # GRP hulls for civil boats
@@ -766,6 +769,27 @@ class Builder:
         K.obox((wx - 6, 0, rt + 14), (0, 1, 0), (1, 0, 0), (12, 12, 12), (230, 230, 220, 255), "Plastic",
                "LightConeFlat", extra={"Brightness": 1.0, "LightDirection": "Z", "LightConeAngle": 18.0,
                                        "InputChannel.InputAxis": "Headlight"})
+        if not mil and self.eq >= 1 and sty["flybridge"]:
+            # open upper helm on the wheelhouse roof: rails, console, seat, ladder
+            fx0, fx1, fy = cx0 + 4, wx - 4, cyt - 8
+            n_p = max(2, int((fx1 - fx0) / 70) + 1)
+            for s in (1, -1):
+                pts = [(fx0 + (fx1 - fx0) * j / (n_p - 1), s * fy, rt) for j in range(n_p)]
+                for p_ in pts:
+                    K.rod(p_, add(p_, (0, 0, 55)), 3, CHROME)
+                K.rod(add(pts[0], (0, 0, 55)), add(pts[-1], (0, 0, 55)), 3.5, CHROME, extend=2)
+            K.rod((fx1, -fy, rt + 55), (fx1, fy, rt + 55), 3.5, CHROME, extend=2)
+            K.box(fx1 - 30, fx1 - 4, -30, 30, rt, rt + 48, P["cabin"], "Plastic")
+            K.ramp(fx1 - 30, fx1 - 4, -30, 30, rt + 48, rt + 62, back=(-1, 0, 0), bottom=(0, 0, -1), color=GLASS,
+                   material="Glass")
+            K.box(fx1 - 90, fx1 - 60, -45, 45, rt, rt + 30, P["cabin_d"], "Plastic")
+            K.box(fx1 - 92, fx1 - 84, -45, 45, rt + 30, rt + 62, (40, 40, 42, 255), "Rubber")
+            for yy in (-18, 18):
+                K.rod((cx0 - 30, yy, D), (cx0 - 2, yy, rt + 2), 3, CHROME)
+            for j in range(1, 5):
+                zz = D + (rt - D) * j / 5
+                xx = cx0 - 30 + 28 * j / 5
+                K.rod((xx, -18, zz), (xx, 18, zz), 2.5, CHROME)
         if not mil:
             mx = cx0 + 20 if sty["mast_aft"] else (cx0 + wx) / 2
             mh = sty["mast_h"]
@@ -837,17 +861,27 @@ class Builder:
                 cabin, "Aluminium", overlap=1.0)
         if self.eq >= 1:
             K.box(tx0 + 3, tx1 - 16, -ty + 3, ty - 3, rt, tz - 4, HIDDEN, "Float", "Float")
-        K.rod((tx0 + 8, 0, tz), (tx0 + 8, 0, tz + 70), 7, fr, "Aluminium")
-        ly = tz + 70
-        if self.eq >= 1:
-            K.box(tx0 - 2, tx0 + 18, -10, 10, tz + 70, tz + 80, cabd, "Aluminium")
-            ly = tz + 80
-        if self.eq >= 1:
-            K.box(tx0 - 30, tx0 + 46, -4, 4, tz + 80, tz + 86, WHITE, "Plastic")
-            ly = tz + 86
-        lx = tx0 + 2 if self.eq >= 1 else tx0 + 8          # light centred on the mast (top)
-        K.box(lx - 4, lx + 4, -4, 4, ly, ly + 6, (240, 240, 230, 255), "Glow", "LightBrick",
-              extra={"Brightness": 0.6, "InputChannel.InputAxis": "Headlight"})
+        if self.eq >= 1 and self.sty["lattice"]:
+            top = (tx0 + 8, 0, tz + 110)
+            for lx, ly in ((tx0 - 6, -22), (tx0 - 6, 22), (tx0 + 22, 0)):
+                K.rod((lx, ly, tz), top, 4, fr, "Aluminium", extend=2)
+            for zz, half in ((tz + 45, 34), (tz + 85, 22)):
+                K.box(tx0 + 3, tx0 + 13, -half, half, zz, zz + 4, fr, "Aluminium")
+            K.box(tx0 - 30, tx0 + 46, -5, 5, tz + 111, tz + 117, WHITE, "Plastic")
+            K.box(tx0 + 4, tx0 + 12, -4, 4, tz + 117, tz + 123, (240, 240, 230, 255), "Glow", "LightBrick",
+                  extra={"Brightness": 0.6, "InputChannel.InputAxis": "Headlight"})
+        else:
+            K.rod((tx0 + 8, 0, tz), (tx0 + 8, 0, tz + 70), 7, fr, "Aluminium")
+            ly = tz + 70
+            if self.eq >= 1:
+                K.box(tx0 - 2, tx0 + 18, -10, 10, tz + 70, tz + 80, cabd, "Aluminium")
+                ly = tz + 80
+            if self.eq >= 1:
+                K.box(tx0 - 30, tx0 + 46, -4, 4, tz + 80, tz + 86, WHITE, "Plastic")
+                ly = tz + 86
+            lx = tx0 + 2 if self.eq >= 1 else tx0 + 8          # light centred on the mast (top)
+            K.box(lx - 4, lx + 4, -4, 4, ly, ly + 6, (240, 240, 230, 255), "Glow", "LightBrick",
+                  extra={"Brightness": 0.6, "InputChannel.InputAxis": "Headlight"})
         if self.eq >= 1:
             for s in (1, -1):
                 K.rod((tx0 + 10, s * (ty - 8), tz), (tx0 + 10, s * (ty - 8), tz + 170), 2.5, fr, "Rubber")
@@ -1000,8 +1034,22 @@ class Builder:
         eq = self.eq
         open_boat = self.kind == "motor"
         rd = 2.5 if open_boat else 3.5
-        # bow pulpit
-        if eq >= 1:
+        # bow bulwarks (solid sides forward) or a bow pulpit
+        if eq >= 1 and self.sty["bulwark"]:
+            hb = self.sty["bulwark_h"]
+            st = self.st
+            xs_b = [x for x in st if ln.X0 + 0.60 * ln.L <= x < ln.X1 - 0.03 * ln.L] + [ln.X1 - 0.03 * ln.L]
+            for a, b in zip(xs_b, xs_b[1:]):
+                K.weld = self.chunk_of[self.sec_of(a + 1)]
+                for s in (1, -1):
+                    ya, yb = s * (ln.sheer_hw(a) - 1.5), s * (ln.sheer_hw(b) - 1.5)
+                    za, zb = ln.sheer_z(a), ln.sheer_z(b)
+                    K.plate((a, ya, za), (a, ya, za + hb), (b, yb, zb), (b, yb, zb + hb), (0, s, 0), 2.5,
+                            P["hull"], self.hm, overlap=1.0)
+                    if eq >= 2:
+                        K.plate((a, ya, za + hb), (a, ya - s * 8, za + hb), (b, yb, zb + hb), (b, yb - s * 8, zb + hb),
+                                (0, 0, 1), 2.0, P["frame"], self.hm, overlap=1.0)
+        elif eq >= 1:
             K.weld = self.chunk_of[self.sec_of(ln.X1 - 0.05 * ln.L)]
             n = 3 + 2 * eq + self.sty["stanchions"]
             xs = [ln.X0 + ln.L * (0.70 + 0.27 * j / (n - 1)) for j in range(n)]
@@ -1185,6 +1233,9 @@ def make_style(kind, size, color, seed):
         "gun_bow": kind == "military" and size != "S" and r.random() < 0.45, "console_side": kind == "motor" and r.random() < 0.4,
         "portholes": r.choice((0, 2, 3)), "hull_no": "%s-%d" % (r.choice("PKB"), r.randint(101, 989)),
         "pedestal": r.random() < 0.6, "screens": r.choice((1, 2, 3)), "cushions": r.random() < 0.6,
+        "hull_tint": r.uniform(-24, 24), "bulwark": kind != "motor" and r.random() < 0.45,
+        "bulwark_h": r.uniform(30, 48), "lattice": r.random() < 0.5,
+        "flybridge": kind == "cutter" and size != "S" and r.random() < 0.4,
     }
     if size == "S":                       # small hulls: keep the cabin low so they stay stiff
         sty["zr"] = min(sty["zr"], 128.0)

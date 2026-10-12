@@ -131,7 +131,9 @@ class Api:
                         "info": {"bricks": i["bricks"], "length": i["length_m"], "beam": i["beam_m"],
                                  "mass": round(i["mass"] / 1000.0, 1), "draft": round(i["draft"], 1),
                                  "sections": i["weld_groups"], "in_range": i["in_range"], "seed": seed,
-                                 "pitch": round(i.get("pitch", 0.0), 1)},
+                                 "pitch": round(i.get("pitch", 0.0), 1),
+                                 "engines": getattr(r.builder, "n_out", 1),
+                                 "stab": ("%.1f / %.1f" % r.builder.stab_k) if getattr(r.builder, "stab_thr", None) else ""},
                         "controls": controls(kind, lang)}
             except Exception as e:
                 traceback.print_exc()
@@ -197,6 +199,13 @@ class Api:
 
     def toggle_fullscreen(self):
         f = getattr(self, "_window", None)
+        if f is None:
+            return False
+        f()
+        return True
+
+    def exit_fullscreen(self):
+        f = getattr(self, "_exitfs", None)
         if f is None:
             return False
         f()
@@ -329,6 +338,7 @@ def run_qt(api, test=False):
 
     class Bridge(QObject):
         toggle = Signal()
+        leave = Signal()
 
     win = QMainWindow()
     win.setWindowTitle("BoatGen")
@@ -354,7 +364,9 @@ def run_qt(api, test=False):
         else:
             win.showFullScreen()
     bridge.toggle.connect(toggle, Qt.ConnectionType.QueuedConnection)
+    bridge.leave.connect(lambda: win.isFullScreen() and win.showNormal(), Qt.ConnectionType.QueuedConnection)
     api._window = bridge.toggle.emit
+    api._exitfs = bridge.leave.emit
 
     if test:
         out = os.path.join(app_dir(), "guitest.txt")

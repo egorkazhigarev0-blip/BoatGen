@@ -27,6 +27,8 @@
       m_unit: "м", t_unit: "т", cm_unit: "см",
       sum: "{kind} · {size} · {detail} детализация · {color}",
       copied: "Скопировано в папку игры", copy_fail: "Не удалось скопировать: ", no_game: "Папка игры не найдена — перенесите папку вручную (см. «⋯»)",
+      support: "Можете поддержать меня подарками в Steam", sound: "Звук", fullscreen: "Во весь экран (F11)",
+      st_engines: "Моторов", st_stab: "Стабилизаторы",
       gen_fail: "Ошибка генерации: ", save_fail: "Не удалось сохранить: ", no_webgl: "3D-превью недоступно на этом компьютере, но лодка сгенерирована.",
     },
     en: {
@@ -53,6 +55,8 @@
       m_unit: "m", t_unit: "t", cm_unit: "cm",
       sum: "{kind} · {size} · {detail} detail · {color}",
       copied: "Copied to the game folder", copy_fail: "Copy failed: ", no_game: "Game folder not found — move the folder manually (see “⋯”)",
+      support: "You can support me with gifts on Steam", sound: "Sound", fullscreen: "Full screen (F11)",
+      st_engines: "Engines", st_stab: "Stabilisers",
       gen_fail: "Generation error: ", save_fail: "Could not save: ", no_webgl: "3D preview is not available on this PC, but the boat was generated.",
     },
   };
@@ -80,6 +84,46 @@
     });
   }
 
+  // ------------------------------------------------------------------ sounds (synthesised, quiet)
+  const sfx = (function () {
+    let ctx = null, muted = false;
+    try { muted = localStorage.getItem("bg_muted") === "1"; } catch (e) {}
+    function ac() {
+      if (!ctx) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } }
+      if (ctx.state === "suspended") ctx.resume();
+      return ctx;
+    }
+    function tone(freq, dur, type, vol, when, slide) {
+      const c = ac(); if (!c || muted) return;
+      const t = c.currentTime + (when || 0);
+      const o = c.createOscillator(), g = c.createGain();
+      o.type = type || "sine"; o.frequency.setValueAtTime(freq, t);
+      if (slide) o.frequency.exponentialRampToValueAtTime(slide, t + dur);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol || 0.05, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + dur + 0.02);
+    }
+    function noise(dur, vol, from, to) {
+      const c = ac(); if (!c || muted) return;
+      const n = Math.floor(c.sampleRate * dur), buf = c.createBuffer(1, n, c.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+      const src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+      src.buffer = buf; f.type = "bandpass"; f.Q.value = 0.8;
+      f.frequency.setValueAtTime(from, c.currentTime); f.frequency.exponentialRampToValueAtTime(to, c.currentTime + dur);
+      g.gain.value = vol; src.connect(f); f.connect(g); g.connect(c.destination); src.start();
+    }
+    return {
+      click() { tone(620, 0.06, "triangle", 0.035); },
+      select() { tone(520, 0.07, "sine", 0.04); tone(780, 0.09, "sine", 0.03, 0.035); },
+      whoosh() { noise(0.28, 0.035, 500, 2400); },
+      done() { [523, 659, 784].forEach((f, i) => tone(f, 0.22, "sine", 0.045, i * 0.09)); },
+      error() { tone(260, 0.16, "triangle", 0.05, 0, 180); },
+      get muted() { return muted; },
+      toggle() { muted = !muted; try { localStorage.setItem("bg_muted", muted ? "1" : "0"); } catch (e) {} return muted; },
+    };
+  })();
+
   // ------------------------------------------------------------------ i18n
   const t = (k) => (I18N[state.lang] || I18N.ru)[k] || k;
   function applyLang() {
@@ -87,6 +131,7 @@
     $$("[data-t]").forEach((el) => { el.textContent = t(el.dataset.t); });
     $$("#langSeg button").forEach((b) => b.classList.toggle("sel", b.dataset.lang === state.lang));
     $("#langMini").textContent = state.lang.toUpperCase();
+    $("#soundBtn").title = t("sound"); $("#fsBtn").title = t("fullscreen");
     updateDims(); updateSummary();
     if (state.result) renderInfo(state.result);
   }
@@ -103,6 +148,7 @@
       setTimeout(() => cur.classList.remove("leave"), 600);
     }
     nxt.classList.add("active");
+    if (state.screen !== name) sfx.whoosh();
     state.screen = name;
     const idx = ORDER.indexOf(name);
     $$("#steps i").forEach((el, i) => { el.className = i === idx ? "on" : i < idx ? "past" : ""; });
@@ -112,7 +158,7 @@
   function pick(groupSel, key) {
     $$(groupSel + " [data-v]").forEach((b) => {
       b.addEventListener("click", () => {
-        state[key] = b.dataset.v; syncSel(); updateDims(); updateSummary();
+        state[key] = b.dataset.v; syncSel(); updateDims(); updateSummary(); sfx.select();
       });
     });
   }
@@ -147,7 +193,8 @@
     const i = r.info;
     $("#boatName").textContent = r.name;
     $("#stats").innerHTML = stat(t("st_len"), i.length.toFixed(2) + " " + t("m_unit")) + stat(t("st_beam"), i.beam.toFixed(2) + " " + t("m_unit")) +
-      stat(t("st_bricks"), i.bricks) + stat(t("st_mass"), i.mass + " " + t("t_unit")) + stat(t("st_sections"), i.sections) + stat(t("st_draft"), Math.round(i.draft) + " " + t("cm_unit"));
+      stat(t("st_bricks"), i.bricks) + stat(t("st_mass"), i.mass + " " + t("t_unit")) + stat(t("st_sections"), i.sections) + stat(t("st_draft"), Math.round(i.draft) + " " + t("cm_unit")) +
+      (i.engines ? stat(t("st_engines"), i.engines) : "") + (i.stab ? stat(t("st_stab"), i.stab) : "");
     $$("#stats .stat").forEach((el, k) => { el.style.animationDelay = k * 0.04 + "s"; });
     $("#controls").innerHTML = (r.controls || []).map((c) => "<li>" + c + "</li>").join("");
   }
@@ -168,7 +215,7 @@
       if (v.reset) v.reset();
       renderInfo(r);
     } catch (e) {
-      toast(t("gen_fail") + e.message, true);
+      toast(t("gen_fail") + e.message, true); sfx.error();
     } finally {
       state.busy = false;
       $("#loader").classList.remove("on");
@@ -193,9 +240,9 @@
       $("#gameDir").textContent = r.game_dir || "%LOCALAPPDATA%\\BrickRigs\\SavedRemastered\\Vehicles";
       $("#copyBtn").style.display = r.game_found ? "" : "none";
       $("#copyBtn").disabled = false;
-      go("done");
+      go("done"); setTimeout(sfx.done, 250);
     } catch (e) {
-      toast(t("save_fail") + e.message, true);
+      toast(t("save_fail") + e.message, true); sfx.error();
     } finally {
       state.busy = false; setButtons(true);
     }
@@ -228,7 +275,30 @@
       if (r && r.ok) { toast(t("copied") + ": " + r.path); $("#copyBtn").disabled = true; }
       else toast(r && r.error === "game folder not found" ? t("no_game") : t("copy_fail") + (r ? r.error : ""), true);
     });
+    // buttons click softly
+    document.addEventListener("click", (e) => { if (e.target.closest(".btn, .icon-btn, .lang-mini, #langSeg button")) sfx.click(); });
+    $("#soundBtn").classList.toggle("muted", sfx.muted);
+    $("#soundBtn").addEventListener("click", () => { $("#soundBtn").classList.toggle("muted", sfx.toggle()); });
+    // full screen: F11 / button / Esc
+    async function fullscreen(force) {
+      const r = await api("toggle_fullscreen").catch(() => null);
+      if (r === true) return;
+      try {                                               // browser fallback
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else if (force !== false) await document.documentElement.requestFullscreen();
+      } catch (e) {}
+    }
+    $("#fsBtn").addEventListener("click", () => fullscreen());
+    // Steam link: open in the system browser
+    $$(".support").forEach((a) => a.addEventListener("click", async (e) => {
+      e.preventDefault();
+      sfx.click();
+      const ok = await api("open_url", a.href).catch(() => false);
+      if (!ok) window.open(a.href, "_blank", "noopener");
+    }));
     document.addEventListener("keydown", (e) => {
+      if (e.key === "F11") { e.preventDefault(); fullscreen(); return; }
+      if (e.key === "Escape") { api("exit_fullscreen").catch(() => null); return; }
       if (e.key !== "Enter" || state.busy) return;
       if (state.screen === "welcome") $("#startBtn").click();
       else if (state.screen === "menu") $("#okMenu").click();

@@ -25,15 +25,27 @@ jobs:
           if (Test-Path dist/BoatGen/error.log) { Get-Content dist/BoatGen/error.log }
           if (-not (Test-Path dist/BoatGen/selftest.ok)) { exit 1 }
           Remove-Item dist/BoatGen/selftest.ok
+      - name: Trim Qt files we do not need
+        shell: pwsh
+        run: |
+          $q = "dist/BoatGen/_internal/PySide6"
+          Get-ChildItem "$q/translations" -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch '(_ru|_en|en-US|ru\.pak)' } | Remove-Item -Force
+          Get-ChildItem "$q/translations/qtwebengine_locales" -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin @('en-US.pak','ru.pak') } | Remove-Item -Force
+          foreach ($m in 'Qt6Pdf','Qt6Designer','Qt6Charts','Qt6DataVisualization','Qt63D*','Qt6Multimedia*','Qt6Bluetooth','Qt6Sensors','Qt6SerialPort','Qt6Test','Qt6Sql','Qt6Svg*','Qt6Xml') { Remove-Item "$q/$m.dll" -ErrorAction SilentlyContinue }
+          "{0:N0} MB" -f ((Get-ChildItem dist/BoatGen -Recurse | Measure-Object Length -Sum).Sum / 1MB)
       - name: Window test (real Qt window)
         shell: pwsh
-        continue-on-error: true
         run: |
+          Remove-Item dist/BoatGen/error.log -ErrorAction SilentlyContinue
           $p = Start-Process dist/BoatGen/BoatGen.exe -ArgumentList "--guitest" -PassThru
           $p | Wait-Process -Timeout 120 -ErrorAction SilentlyContinue
-          if (Test-Path dist/BoatGen/guitest.txt) { "GUITEST: " + (Get-Content dist/BoatGen/guitest.txt) } else { "GUITEST: no result" }
-          if (Test-Path dist/BoatGen/error.log) { Get-Content dist/BoatGen/error.log }
+          if (-not $p.HasExited) { $p | Stop-Process -Force }
+          $r = if (Test-Path dist/BoatGen/guitest.txt) { Get-Content dist/BoatGen/guitest.txt } else { "no result" }
+          Write-Output "::notice title=guitest::$r"
+          if (Test-Path dist/BoatGen/error.log) { $e = (Get-Content dist/BoatGen/error.log -Raw) -replace "`r?`n", '%0A'; Write-Output "::warning title=errorlog::$e" }
           Remove-Item dist/BoatGen/guitest.txt, dist/BoatGen/error.log, dist/BoatGen/settings.json -ErrorAction SilentlyContinue
+          Remove-Item dist/BoatGen/window_profile -Recurse -ErrorAction SilentlyContinue
+          if ($r -ne "ok") { exit 1 }
       - name: Generate test boats
         run: python -c "import sys; sys.path.insert(0,'source'); from engine.gen import generate; [print(k, s, d, generate(k,s,d,'dark',7).info['bricks']) for k in ('motor','cutter','military') for s in 'SML' for d in ('low','med','high')]"
       - name: Add readme

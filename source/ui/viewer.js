@@ -314,7 +314,7 @@ void main() {
     if (!this.counts) return;
     const zoom = opts.zoom || this.zoomS || 1;
     const fov = 0.62;
-    if (!this.base && !opts.base) this.base = this.fit(this.yaw0, this.pitch0, w / h, 1.04);
+    if (!this.base && !opts.base) this.base = this.fit(this.yaw0, this.pitch0, w / h, 1.22);
     const dist = (opts.base || this.base) * zoom;
     const yaw = opts.yaw != null ? opts.yaw : this.yaw, pitch = opts.pitch != null ? opts.pitch : this.pitch;
     const t = this.target;

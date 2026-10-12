@@ -13,7 +13,11 @@
 <header class="topbar">
   <div class="brand"><svg viewBox="0 0 32 32" class="logo"><path d="M4 19h24l-3.5 6.2a3 3 0 0 1-2.6 1.5H10.1a3 3 0 0 1-2.6-1.5Z"/><path d="M11 18V11h7l4 7" class="logo-cab"/><path d="M3 29c2.5 0 2.5-1.4 5-1.4s2.5 1.4 5 1.4 2.5-1.4 5-1.4 2.5 1.4 5 1.4 2.5-1.4 5-1.4" class="logo-wave"/></svg><span>BoatGen</span></div>
   <div class="steps" id="steps"><i></i><i></i><i></i><i></i></div>
-  <button class="lang-mini" id="langMini" title="Language">RU</button>
+  <div class="top-right">
+    <button class="icon-btn" id="soundBtn" title="Звук"><svg viewBox="0 0 24 24" class="snd-on"><path d="M4 9h4l5-4v14l-5-4H4Z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg><svg viewBox="0 0 24 24" class="snd-off"><path d="M4 9h4l5-4v14l-5-4H4Z"/><path d="M17 9l5 6M22 9l-5 6"/></svg></button>
+    <button class="icon-btn" id="fsBtn" title="F11"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+    <button class="lang-mini" id="langMini" title="Language">RU</button>
+  </div>
 </header>
 
 <main id="app">
@@ -46,6 +50,7 @@
         </div>
       </div>
       <button class="btn primary big" id="startBtn"><span data-t="w_start">Начать</span><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+      <div><a class="support" href="https://steamcommunity.com/tradeoffer/new/?partner=1869951288&amp;token=joiRehOd" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z"/></svg><span data-t="support">Можете поддержать меня подарками в Steam</span></a></div>
     </div>
   </section>
 
@@ -163,6 +168,7 @@
         <button class="btn ghost" id="copyBtn"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg><span data-t="b_copy">Скопировать в Brick Rigs</span></button>
       </div>
       <button class="btn primary big" id="homeBtn"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 10v9h12v-9"/></svg><span data-t="b_home">В главное меню</span></button>
+      <a class="support" href="https://steamcommunity.com/tradeoffer/new/?partner=1869951288&amp;token=joiRehOd" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z"/></svg><span data-t="support">Можете поддержать меня подарками в Steam</span></a>
     </div>
   </section>
 </main>

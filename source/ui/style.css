@@ -54,6 +54,17 @@ svg { display: block; }
 .steps i { width: 26px; height: 5px; border-radius: 4px; background: var(--surface2); transition: background .5s var(--ease), width .5s var(--ease); }
 .steps i.on { background: linear-gradient(90deg, var(--accent), var(--accent2)); width: 38px; }
 .steps i.past { background: rgba(63, 167, 255, .45); }
+.top-right { display: flex; align-items: center; gap: 8px; }
+.icon-btn { width: 34px; height: 34px; border-radius: 11px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); display: grid; place-items: center; cursor: pointer; transition: background .2s, color .2s, border-color .2s; }
+.icon-btn:hover { background: var(--surface2); color: var(--text); border-color: var(--border2); }
+.icon-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.icon-btn .snd-off { display: none; }
+.icon-btn.muted .snd-on { display: none; }
+.icon-btn.muted .snd-off { display: block; }
+.support { display: inline-flex; align-items: center; gap: 8px; margin-top: 18px; padding: 8px 14px; border-radius: 999px; color: var(--muted); font-size: 13px; text-decoration: none; border: 1px solid transparent; transition: color .25s, background .25s, border-color .25s; }
+.support svg { width: 16px; height: 16px; fill: rgba(255, 110, 140, .18); stroke: #ff6e8c; stroke-width: 2; stroke-linejoin: round; transition: transform .35s var(--ease); }
+.support:hover { color: var(--text); background: var(--surface); border-color: var(--border); }
+.support:hover svg { transform: scale(1.18); }
 .lang-mini { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 600; letter-spacing: .5px; cursor: pointer; transition: background .2s, border-color .2s; color: var(--muted); }
 .lang-mini:hover { background: var(--surface2); border-color: var(--border2); color: var(--text); }
 
