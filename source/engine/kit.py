@@ -82,7 +82,8 @@ class Kit:
               connectors=None):
         b = Brick(typ, centre, mat_to_rot(X, Y, Z))
         if color is not None:
-            b.set("BrickColor", tuple(int(c) for c in color))
+            col = tuple(int(c) for c in color)
+            b.set("BrickColor", col + (255,) * (4 - len(col)))      # always RGBA
         if size is not None:
             b.set("BrickSize", tuple(float(s) for s in size))
         if material and material not in ("Plastic", "Float", "Fuel", "Fixed"):

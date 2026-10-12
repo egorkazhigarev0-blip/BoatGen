@@ -511,11 +511,12 @@ class Builder:
                     return K.obox((fx - ox, y, fz + 2), X, Zh, (4, 4, 4), (240, 140, 40, 255), "Plastic", typ,
                                   extra=extra)
                 ra = logic("SensorBrick", -20, (1, 0, 0), (0, 0, 1),
-                           {"SensorType": "Roll", "OutputChannel.MinIn": -15.0, "OutputChannel.MaxIn": 15.0,
+                           {"SensorType": "Roll", "OutputChannel.MinIn": -5.0, "OutputChannel.MaxIn": 5.0,
                             "OutputChannel.MinOut": -10.0, "OutputChannel.MaxOut": 10.0})
                 rr = logic("SensorBrick", -10, (0, 0, -1), (1, 0, 0),
                            {"SensorType": "NormalAngularSpeed", "OutputChannel.MinIn": -60.0,
-                            "OutputChannel.MaxIn": 60.0})
+                            "OutputChannel.MaxIn": 60.0, "OutputChannel.MinOut": -5.0,
+                            "OutputChannel.MaxOut": 5.0})
                 roll_sw = logic("SwitchBrick", 0, (1, 0, 0), (0, 0, 1),
                                 {"InputChannel.InputAxis": "Custom", "InputChannel.SourceBricks": [src(ra), src(rr)]})
                 pa = logic("SensorBrick", 10, (1, 0, 0), (0, 0, 1),
@@ -624,6 +625,14 @@ class Builder:
             t = K.obox((X0 - d - 11.25, yj, zj), (0, 0, -1), (1, 0, 0), (18, 18, 22.5), (44, 44, 46, 255), "Plastic",
                        "ThrusterBrick", extra={"InputScale": 15.0})
             self.main_thr.append((t, "jet"))
+        xp = X0 + 0.22 * ln.L
+        K.weld = self.chunk_of[self.sec_of(xp)]
+        for s in (1, -1):
+            yp = 0.32 * ln.hw
+            zh = ln.keel_z(xp) + yp / max(1.0, ln.chine_hw(xp)) * (ln.chine_z(xp) - ln.keel_z(xp))
+            t = K.obox((xp, s * yp, zh - 8), (0, 0, -1), (1, 0, 0), (18, 18, 26), (44, 44, 46, 255), "Plastic",
+                       "ThrusterBrick", extra={"InputScale": 10.0})
+            self.main_thr.append((t, "pod"))
 
     # ------------------------------------------------------------------ cabin
     def cabin(self):
@@ -1000,6 +1009,8 @@ class Builder:
             if b.type.startswith("Camera"):
                 b.set("OwningSeat", src(gunner))
                 b.set("CameraName", "Gun sight")
+            if b.type.startswith("Gun"):
+                b.set("AmmoType", "HighExplosive")          # as the user set it on STRIZH-72
             if b.group in (1, 4) and not b.type.startswith("Actuator"):
                 b.set("ConnectorSpacing", 0)
             b.group = welds[b.group]
@@ -1374,32 +1385,34 @@ class Builder:
     def tune(self):
         """Engine and stabiliser strength from the boat's mass and size.
 
-        Calibrated on the user's own tuning in the game:
-          * TUMAN-3 (cutter 8 m, ~4.6 t in this mass model): roll thrusters 1, bow pitch thrusters
-            up 7 / down 1 (pitch sensor not inverted), outboards 5 (reverse -3.3) + two fixed
-            hull thrusters 15 -> 40 forward in total;
-          * SEVER-4 (patrol boat 10.5 m, ~12 t): roll 6, pitch 6.
-        Roll: the needed torque grows with mass x beam^2, the user's two boats fit mass^1.7 x beam.
-        Pitch: nearly the same on both boats, lifting the bow strong, pushing it down weak.
-        Engines: total thrust ~ mass^0.75 (smaller boats get more power per tonne, like real ones),
-        a quarter on the steerable outboards, the rest on the fixed hull jets."""
+        Calibrated on the user's own tuning in the game (mass in this generator's model):
+          * TUMAN-3, cutter 8 m, ~4.6 t: roll 1 (old sensors), bow thrusters up 7 / down 1,
+            outboards 5 / -3.3, fixed thrusters 2 x 15 -> 40 forward;
+          * STRIZH-72, patrol boat 11.3 m, ~11.7 t: roll angle sensor +-5 deg, roll-rate output +-5,
+            roll thrusters 3.5; bow thrusters up 7 / down 5; outboards only steer (5 / -6.8),
+            transom jets 2 x 30.7 + hull thrusters 2 x 10 -> ~91 forward.
+        Roll gain (thrust x sensor gain) between the two grows ~ mass^2.3 x beam,
+        the bow-down thruster ~ mass^1.7, total thrust ~ mass^0.88."""
         m = self.K.mass()[0]
-        roll = min(8.0, max(0.3, 6.0 * (m / 12000.0) ** 1.7 * (self.B / 330.0)))
-        p_up = min(10.0, max(3.0, 7.0 * (m / 4600.0) ** (-0.16 if m > 4600 else 0.3)))   # small boats: gentler
-        p_dn = p_up / 7.0
+        mr = m / 11700.0
+        roll = min(6.0, max(0.15, 3.5 * mr ** 2.3 * (self.B / 351.0)))
+        p_up = min(9.0, max(3.0, 7.0 * (m / 4600.0) ** (0.3 if m < 4600 else 0.0)))
+        p_dn = min(6.0, max(0.5, 5.0 * mr ** 1.72))
         for idx, which, k in getattr(self, "stab_thr", []):
             if which == "roll":
                 v = k * roll
             else:
                 v = -p_up if k < 0 else p_dn
             self.K.v.bricks[idx].set("InputScale", round(v, 2))
-        total = 40.0 * (m / 4600.0) ** 0.75
-        out = max(1.5, 0.25 * total / self.n_out)
-        jet = max(2.0, 0.375 * total)
+        total = 40.0 * (m / 4600.0) ** 0.88
+        out = 5.0 if m > 3000 else 3.5                        # outboards mainly steer
+        rev = -max(1.5, 3.3 * (m / 4600.0) ** 0.78)
+        fixed = max(4.0, total - out * self.n_out)
+        jet, pod = 0.75 * fixed / 2, 0.25 * fixed / 2
         for idx, kind in self.main_thr:
-            v = {"out": out, "rev": -0.66 * out, "jet": jet}[kind]
+            v = {"out": out, "rev": rev / self.n_out * 2 if self.n_out > 2 else rev, "jet": jet, "pod": pod}[kind]
             self.K.v.bricks[idx].set("InputScale", round(v, 1))
-        self.thrust = (round(out, 1), round(-0.66 * out, 1), round(jet, 1))
+        self.thrust = (round(out, 1), round(rev, 1), round(jet, 1))
         self.stab_k = (round(roll, 2), round(p_up, 2))
 
 # ----------------------------------------------------------------------------- variation
