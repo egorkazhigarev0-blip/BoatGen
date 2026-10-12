@@ -12,7 +12,7 @@ MetaData.brm, Preview.png), которую кладёте в папку тран
 Запуск
 ------
 1. Скачайте BoatGen-win.zip:
-   https://github.com/skyvedqq-alt/Boatgen1/releases/download/latest/BoatGen-win.zip
+   https://github.com/egorkazhigarev0-blip/BoatGen/releases/download/latest/BoatGen-win.zip
 2. Распакуйте (правой кнопкой → «Извлечь всё…») и запустите BoatGen.exe.
    Папку _internal держите рядом с exe. Python и WebView2 не нужны —
    у программы своё окно со встроенным движком.
