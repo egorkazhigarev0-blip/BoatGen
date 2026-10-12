@@ -15,7 +15,7 @@ import threading
 import traceback
 
 APP_NAME = "BoatGen"
-VERSION = "1.0"
+VERSION = "1.1"
 
 
 # ----------------------------------------------------------------------------- paths
