@@ -280,7 +280,7 @@
     document.body.classList.toggle("no-motion", !prefs.motion);
     sfx.set(!prefs.sound, prefs.volume);
     $("#soundBtn").classList.toggle("muted", !prefs.sound);
-    if (viewer && viewer.gl) { viewer.showWater = prefs.water; viewer.autoRotate = prefs.autorotate; }
+    if (viewer && viewer.gl) { viewer.showWater = prefs.water; viewer.autoRotate = prefs.autorotate; viewer.dirty = true; }
     $$("#themePick button").forEach((b) => b.classList.toggle("sel", b.dataset.v === prefs.theme));
     $$("#factionPick button").forEach((b) => b.classList.toggle("sel", b.dataset.v === prefs.faction));
     $("#pSound").checked = prefs.sound; $("#pVolume").value = prefs.volume;

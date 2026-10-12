@@ -15,7 +15,7 @@ import threading
 import traceback
 
 APP_NAME = "BoatGen"
-VERSION = "1.2"
+VERSION = "1.3"
 
 
 # ----------------------------------------------------------------------------- paths
@@ -333,7 +333,7 @@ def log_error(text):
 def run_qt(api, test=False):
     """BoatGen as a real desktop application: a Qt window with its own Chromium (QtWebEngine),
     so it needs neither WebView2 nor a browser."""
-    os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--ignore-gpu-blocklist --autoplay-policy=no-user-gesture-required")
+    os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--autoplay-policy=no-user-gesture-required")
     from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
     from PySide6.QtGui import QDesktopServices, QIcon
     from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
@@ -383,13 +383,32 @@ def run_qt(api, test=False):
 
     bridge = Bridge()
 
+    # "Full screen" = borderless window 1 px taller than the screen. A true exclusive full-screen
+    # Chromium window on Windows makes the compositor switch modes and flicker.
+    fs = {"on": False, "geo": None}
+
+    def enter_fs():
+        fs["geo"] = win.geometry()
+        scr = (win.screen() or app.primaryScreen()).geometry()
+        win.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+        win.showNormal()
+        win.setGeometry(scr.x(), scr.y(), scr.width(), scr.height() + 1)
+        win.show()
+        fs["on"] = True
+
+    def leave_fs():
+        if not fs["on"]:
+            return
+        win.setWindowFlag(Qt.WindowType.FramelessWindowHint, False)
+        win.show()
+        if fs["geo"] is not None:
+            win.setGeometry(fs["geo"])
+        fs["on"] = False
+
     def toggle():
-        if win.isFullScreen():
-            win.showNormal()
-        else:
-            win.showFullScreen()
+        leave_fs() if fs["on"] else enter_fs()
     bridge.toggle.connect(toggle, Qt.ConnectionType.QueuedConnection)
-    bridge.leave.connect(lambda: win.isFullScreen() and win.showNormal(), Qt.ConnectionType.QueuedConnection)
+    bridge.leave.connect(leave_fs, Qt.ConnectionType.QueuedConnection)
     api._window = bridge.toggle.emit
     api._exitfs = bridge.leave.emit
 

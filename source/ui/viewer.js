@@ -188,9 +188,10 @@ void main() {
   }
 
   // ------------------------------------------------------------------ viewer
-  function Viewer(canvas) {
+  function Viewer(canvas, opts) {
+    opts = opts || {};
     this.canvas = canvas;
-    const gl = canvas.getContext("webgl", { antialias: true, alpha: true, premultipliedAlpha: false, preserveDrawingBuffer: false });
+    const gl = canvas.getContext("webgl", { antialias: true, alpha: true, premultipliedAlpha: true, preserveDrawingBuffer: !!opts.offscreen });
     this.gl = gl;
     if (!gl) return;
     const p = gl.createProgram();
@@ -209,22 +210,30 @@ void main() {
     this.yaw = 0.62; this.pitch = 0.36; this.dist = 10; this.target = [0, 0, 0]; this.radius = 5;
     this.vyaw = 0; this.vpitch = 0; this.auto = true; this.zoom = 1;
     this.water = -1e3; this.showWater = true;
+    if (opts.offscreen) return;
     this._bind();
-    const ro = new ResizeObserver(() => { this._resize(); this.base = null; });
+    const ro = new ResizeObserver(() => { this._resize(); this.base = null; this.dirty = true; });
     ro.observe(canvas);
     this._resize();
     let last = performance.now();
+    // draw only while the 3D view is on screen and something moves (no idle repaints = no flicker)
     const loop = (t) => {
       const dt = Math.min(0.05, (t - last) / 1000); last = t;
-      if (this.auto && this.autoRotate !== false) this.yaw += dt * 0.22;
-      if (!this.drag) {
+      requestAnimationFrame(loop);
+      if (!this.canvas.closest(".screen.active") || document.hidden || !this.canvas.clientWidth) return;
+      let moving = this.dirty || this.drag;
+      if (this.auto && this.autoRotate !== false) { this.yaw += dt * 0.22; moving = true; }
+      if (!this.drag && (Math.abs(this.vyaw) > 1e-5 || Math.abs(this.vpitch) > 1e-5)) {
         this.yaw += this.vyaw; this.pitch += this.vpitch;
-        this.vyaw *= 0.92; this.vpitch *= 0.92;
+        this.vyaw *= 0.92; this.vpitch *= 0.92; moving = true;
       }
       this.pitch = Math.max(0.04, Math.min(1.35, this.pitch));
-      this.zoomS = this.zoomS == null ? this.zoom : this.zoomS + (this.zoom - this.zoomS) * 0.15;
+      const zs = this.zoomS == null ? this.zoom : this.zoomS + (this.zoom - this.zoomS) * 0.15;
+      if (Math.abs(zs - (this.zoomS || 0)) > 1e-4) moving = true;
+      this.zoomS = zs;
+      if (!moving) return;
+      this.dirty = false;
       this.draw();
-      requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);
   }
@@ -236,7 +245,7 @@ void main() {
     c.addEventListener("pointermove", (e) => {
       if (!this.drag) return;
       const dx = e.clientX - px, dy = e.clientY - py; px = e.clientX; py = e.clientY;
-      this.vyaw = dx * 0.006; this.vpitch = dy * 0.005;
+      this.vyaw = dx * 0.006; this.vpitch = dy * 0.005; this.dirty = true;
       this.yaw += this.vyaw; this.pitch += this.vpitch;
     });
     const up = () => { this.drag = false; };
@@ -250,7 +259,7 @@ void main() {
   };
 
   Viewer.prototype.reset = function () {
-    this.yaw = 0.62; this.pitch = 0.36; this.zoom = 1; this.vyaw = this.vpitch = 0; this.auto = true;
+    this.yaw = 0.62; this.pitch = 0.36; this.zoom = 1; this.vyaw = this.vpitch = 0; this.auto = true; this.dirty = true;
   };
 
   Viewer.prototype._resize = function () {
@@ -301,6 +310,7 @@ void main() {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
     gl.bufferData(gl.ARRAY_BUFFER, all, gl.STATIC_DRAW);
     this.counts = [opaque.length / 11, trans.length / 11, water.length / 11];
+    this.scene = sc; this.waterCm = waterCm; this.dirty = true;
   };
 
   Viewer.prototype.draw = function (opts) {
@@ -366,14 +376,19 @@ void main() {
   };
 
   // 256x256 transparent snapshot for Preview.png (the game's thumbnail)
+  // rendered in a separate off-screen canvas, so the visible 3D view never resizes or blinks
   Viewer.prototype.capture = function (size) {
     size = size || 256;
-    const c = this.canvas, w = c.width, h = c.height;
+    if (!this.scene) return null;
+    const c = document.createElement("canvas");
     c.width = size; c.height = size;
-    this.draw({ yaw: 0.72, pitch: 0.42, zoom: 1, noWater: true, base: this.fit(0.72, 0.42, 1, 1.22) });
+    const v = new Viewer(c, { offscreen: true });
+    if (!v.gl) return null;
+    v.setScene(this.scene, this.waterCm);
+    v.draw({ yaw: 0.72, pitch: 0.42, zoom: 1, noWater: true, base: v.fit(0.72, 0.42, 1, 1.22) });
     const url = c.toDataURL("image/png");
-    c.width = w; c.height = h;
-    this.draw();
+    const lose = v.gl.getExtension("WEBGL_lose_context");
+    if (lose) lose.loseContext();
     return url;
   };
 

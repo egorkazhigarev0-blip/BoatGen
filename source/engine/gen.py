@@ -1093,11 +1093,14 @@ class Builder:
             K.weld = w
 
     # ------------------------------------------------------------------ factions (patrol boats only)
-    EAGLE = [  # (u, v, length, height, angle) - flat steppe eagle facing the bow, ~60 x 44 cm
-        (0, -2, 8, 22, 0), (0, 12, 7, 7, 0), (4.5, 11, 5, 3, -25), (0, -16, 11, 7, 0),
-        (-10, 4, 19, 6, 22), (-22, 10, 17, 5, 34), (-11, -2, 17, 5, 6), (-23, 2, 14, 4, 14),
-        (10, 4, 19, 6, -22), (22, 10, 17, 5, -34), (11, -2, 17, 5, -6), (23, 2, 14, 4, -14),
-        (-3, -12, 3, 6, 0), (3, -12, 3, 6, 0)]
+    # soaring steppe eagle, front view: broad wings with a slight dihedral and spread "finger"
+    # primaries at the tips, head turned towards the bow, fanned tail. (u, v, length, height, angle)
+    _WING = [(10, 3.5, 17, 9, 8), (22.5, 5.8, 11, 7.5, 13)] + [
+        (round(28 + 4 * math.cos(math.radians(a)), 2), round(vb + 4 * math.sin(math.radians(a)), 2), 8, 1.8, a)
+        for vb, a in ((2.6, -22), (4.4, -8), (6.2, 6), (8.0, 20), (9.6, 34))]
+    EAGLE = ([(0, 0, 8, 17, 0), (1.2, 10.5, 7, 6.5, 0), (5.4, 10.2, 4.2, 2.6, -32), (0, -11.5, 6, 6, 0),
+              (-3.5, -12.5, 3.2, 7.5, 18), (3.5, -12.5, 3.2, 7.5, -18)]
+             + _WING + [(-u, v, ln_, h, -a) for u, v, ln_, h, a in _WING])
 
     def emblem(self, which, xc, yw, zc, s, sc):
         """Flat emblem on a vertical wall at y = yw (outward side s): 'III' bars or the eagle."""
