@@ -25,7 +25,7 @@ import os
 import random
 from datetime import datetime, timezone
 
-from .kit import Kit, add, sub, mul, unit, norm, cross, dot, mid, frame, mat_to_rot
+from .kit import Kit, add, sub, mul, unit, norm, cross, dot, mid, frame, mat_to_rot, rotm
 from .brv import Vehicle
 from .brm import Meta
 
@@ -38,13 +38,14 @@ KINDS = {
     "cutter":   dict(L=(650, 800, 950), B=(265, 285, 315), ratio=2.95, depth=0.150, dr0=18, outboards=2),
     "military": dict(L=(900, 1100, 1300), B=(320, 345, 390), ratio=3.25, depth=0.142, dr0=20, outboards=2),
 }
-DETAIL = {"low": (200, 250), "med": (500, 600), "high": (900, 1100)}
+DETAIL = {"low": (300, 350), "med": (650, 800), "high": (1100, 1300)}
 EQUIP = {"low": 0, "med": 1, "high": 2}
 # (stations, bottom strakes, side strakes, deck strips)
 RES = [(7, 1, 2, 1), (8, 2, 2, 2), (9, 2, 2, 2), (10, 2, 3, 2), (11, 2, 3, 3), (12, 3, 3, 3),
        (13, 3, 3, 3), (14, 3, 4, 3), (15, 3, 4, 4), (16, 3, 4, 4), (17, 4, 4, 4), (18, 4, 5, 4),
        (19, 4, 5, 5), (20, 4, 5, 5), (22, 4, 6, 5), (24, 5, 6, 5), (26, 5, 6, 6), (28, 5, 7, 6),
-       (30, 6, 7, 6), (33, 6, 7, 7), (36, 6, 8, 7), (40, 7, 8, 8)]
+       (30, 6, 7, 6), (33, 6, 7, 7), (36, 6, 8, 7), (40, 7, 8, 8), (44, 7, 9, 8), (48, 8, 9, 9),
+       (52, 8, 10, 9), (56, 9, 10, 10)]
 
 PALETTES = {
     "dark": dict(bottom=(40, 42, 45), boot=(24, 25, 27), hull_low=(70, 74, 78), band=(32, 33, 35),
@@ -140,8 +141,9 @@ class Lines:
 
 # ----------------------------------------------------------------------------- builder
 class Builder:
-    def __init__(self, kind, size, detail, color, seed, res):
+    def __init__(self, kind, size, detail, color, seed, res, faction=None):
         self.kind, self.size, self.detail, self.color, self.seed = kind, size, detail, color, seed
+        self.faction = faction if kind == "military" else None
         self.rng = random.Random("%s-%d" % (kind, seed))
         rng = self.rng
         spec = KINDS[kind]
@@ -163,6 +165,13 @@ class Builder:
         for k in ("cabin", "cabin_d"):
             P[k] = tuple(max(0, min(255, int(c + t))) for c in P[k][:3]) + (255,)
         P["roof"] = rgba((222, 224, 226)) if sty["two_tone"] else P["cabin_d"]
+        if self.faction == "south":
+            # "Southern State": worn, a bit improvised - dull olive-brown cast, rusty bottom
+            def dull(c, k=0.18, to=(88, 82, 62)):
+                return tuple(int(c[i] * (1 - k) + to[i] * k) for i in range(3)) + (255,)
+            for k_ in ("hull", "hull_low", "cabin", "cabin_d", "deck_a", "deck_b", "roof", "band"):
+                P[k_] = dull(P[k_])
+            P["bottom"] = rgba((86, 52, 40))
         h = sty["hull_tint"]
         for k in ("hull", "hull_low"):
             P[k] = tuple(max(0, min(255, int(c + h))) for c in P[k][:3]) + (255,)
@@ -200,6 +209,22 @@ class Builder:
             i += n
         return chunk_of
 
+    def jag_chunk(self, i, band, side):
+        """Break lines are not straight: each strake / deck strip shifts the chunk boundary by up
+        to one section (a smooth random walk across the strakes), so a hit tears out a ragged piece."""
+        if not hasattr(self, "_jag"):
+            self._jag = {}
+        key = (band if band < 50 else 50 + band % 7, side)
+        if key not in self._jag:
+            r = random.Random("jag-%d-%d-%d" % (self.seed, key[0], side))
+            prev = self._jag.get((key[0] - 1, side), 0)
+            self._jag[key] = max(-1, min(1, prev + r.choice((-1, 0, 0, 1))))
+        o = self._jag[key]
+        if random.Random("jg-%d-%d-%d-%d" % (self.seed, i, band, side)).random() < 0.15:
+            o = max(-1, min(1, o + random.Random("jh-%d-%d" % (i, band)).choice((-1, 1))))
+        j = max(0, min(len(self.chunk_of) - 1, i + o))
+        return self.chunk_of[j]
+
     def skin_chunk(self, chunk_of, i, band):
         """Skin bands sometimes belong to the neighbouring chunk -> ragged break lines."""
         r = random.Random(self.seed * 131 + i * 17 + band)
@@ -232,11 +257,12 @@ class Builder:
             for s in (1, -1):
                 A, B = ln.section(xa, s, NB, NS), ln.section(xb, s, NB, NS)
                 for j in range(NB + NS):
-                    K.weld = self.skin_chunk(chunk_of, i, (j >= NB) * 2 + (s > 0))
+                    K.weld = self.jag_chunk(i, j, s)
                     p0, p1, q0, q1 = A[j], A[j + 1], B[j], B[j + 1]
                     if (norm(sub(p1, p0)) + norm(sub(q1, q0))) / 2 < 1.0:
                         continue
-                    K.plate(p0, p1, q0, q1, sub(mid(p0, p1, q0, q1), centre), 1.2, strake_col[j], self.hm)
+                    K.plate(p0, p1, q0, q1, sub(mid(p0, p1, q0, q1), centre), 1.2, strake_col[j], self.hm,
+                            overlap=2.0 if NB + NS >= 10 else 3.0)
                 K.weld = chunk_of[i]
                 if xb <= ln.X1 - 0.07 * ln.L and self.eq >= 1:            # spray chine
                     c0, c1 = A[NB], B[NB]
@@ -287,8 +313,10 @@ class Builder:
                 else:
                     for k in range(NSTRIP):
                         t0, t1 = -1 + 2 * k / NSTRIP, -1 + 2 * (k + 1) / NSTRIP
+                        K.weld = self.jag_chunk(i, 50 + k, 0)
                         K.plate((xa, wa * t0, za), (xa, wa * t1, za), (xb, wb * t0, zb), (xb, wb * t1, zb),
                                 (0, 0, 1), 1.2, P["deck_a"] if (i + k) % 2 else P["deck_b"], self.hm, overlap=1.0)
+                    K.weld = chunk_of[i]
             # frame (axis aligned web) and floats - they carry the contacts between chunks
             if xa <= last_float:
                 self._frame_and_floats(i, xa, xb, last_float)
@@ -540,7 +568,7 @@ class Builder:
             K.fixed("Actuator_1sx1sx1s_Bottom", (XA, yc, zb), color=STEEL, material="Aluminium",
                     extra={"ActuatorMode": "Seeking", "InputChannel.InputAxis": "Steering",
                            "MinLimit": -30.0, "MaxLimit": 30.0})
-            K.new_weld()
+            self.protect.add(K.new_weld())
             K.fixed("Actuator_1sx1sx1s_Top", (XA, yc, zb + 5), color=STEEL, material="Aluminium")
             z = zb + 10
             K.box(XA - 26 * k, XA + 12 * k, yc - 14 * k, yc + 14 * k, z, z + 4, STEEL, "Aluminium", connectors=0)
@@ -616,7 +644,7 @@ class Builder:
         floor = D + 5
         zs, zr = floor + sty["zs"], floor + sty["zr"]
         wx = cx1 - sty["rake"]
-        self.cab = dict(cx0=cx0, cx1=cx1, cy=cy, floor=floor, zr=zr, wx=wx)
+        self.cab = dict(cx0=cx0, cx1=cx1, cy=cy, floor=floor, zr=zr, wx=wx, zs=zs, D=D, dx1=cx0 + 76)
         cab_w = K.new_weld()
         self.cab_w = cab_w
         cabin, cabd, fr = P["cabin"], P["cabin_d"], P["frame"]
@@ -629,6 +657,7 @@ class Builder:
         else:
             K.box(cx0 + 10, cx1 - 10, -cy + 10, cy - 10, D, floor - 2, fr, "Plastic")
         n_win = max(1, int((wx - 8 - (dx1 + 11 if side_doors else cx0 + 12)) / self.sty["win_w"])) if self.eq else 1
+        armoured = {}
         for s in (1, -1):
             y0, y1 = sorted((s * (cy - 2), s * cy))
             if side_doors:
@@ -661,6 +690,10 @@ class Builder:
                     K.obox(cpt, (1, 0, 0), outn, (b - a, band_h + 2, 3.0), fr, "Aluminium")
                 else:
                     K.obox(cpt, (1, 0, 0), outn, (b - a + 1, band_h, 1.5), GLASS, "Glass")
+                    if self.faction == "south" and not armoured.get(s) and b - a > 30:
+                        armoured[s] = True        # improvised steel shield bolted over a window
+                        K.obox(add(cpt, mul(outn, 2.2)), (1, 0, 0), outn, ((b - a) * 0.55, band_h * 0.7, 2.0),
+                               (64, 66, 60, 255), "Steel")
             if side_doors:
                 cpt = sub(add(((dx0 + dx1) / 2, s * cy, zs), mul(up, band_h * 0.92)), mul(outn, 1.0))
                 K.obox(cpt, (1, 0, 0), outn, (dx1 - dx0 + 2, band_h * 0.17, 3.0), cabin, "Aluminium")
@@ -811,7 +844,7 @@ class Builder:
                   extra={"Brightness": 0.6, "InputChannel.InputAxis": "Headlight"})
             if self.eq >= 1 and sty["yard"]:
                 K.box(mx - 3, mx + 3, -30, 30, rt + mh * 0.7, rt + mh * 0.7 + 4, P["frame"], "Aluminium")
-        if self.eq >= 1:
+        if self.eq >= 1 and not mil:            # patrol boats carry their whips on the stern rail
             for j in range(sty["antennas"]):
                 ax = cx0 + 10 + 14 * j
                 ay = (cyt - 14) * (1 if j % 2 else -1)
@@ -831,7 +864,7 @@ class Builder:
                                    ((dx0, y0, floor + 6), (dx1 - 1, y1, floor + 117)),
                                    ((dx0 + 10, gy0, floor + 55), (dx1 - 10, gy1, floor + 100)),
                                    {"MaxLimit": 95.0} if s > 0 else {"MinLimit": -95.0, "SpeedFactor": -1.0}, "Action4"))
-        K.weld = 0
+        K.weld = self.cab_w                       # door switches welded to the wheelhouse
         switches = {}
         for key, y in (("Action3", 0.62 * cy), ("Action4", -0.62 * cy)):
             if key == "Action4" and not side_doors:
@@ -846,7 +879,7 @@ class Builder:
                      "InputChannel.SourceBricks": [src(switches[key])]}
             extra.update(lim)
             K.brick("Actuator_1sx1sx1s_Bottom", hinge, X, Y, Z, None, STEEL, "Aluminium", extra)
-            K.new_weld()
+            self.protect.add(K.new_weld())
             K.fixed("Actuator_1sx1sx1s_Top", add(hinge, (0, 0, 5)), color=STEEL, material="Aluminium")
             (x0, y0, z0), (x1, y1, z1) = leaf
             K.box(x0, x1, y0, y1, z0, z1, P["cabin_d"], "Aluminium", connectors=0)
@@ -858,7 +891,9 @@ class Builder:
     def tower_and_turret(self):
         K, P, c = self.K, self.P, self.cab
         cx0, rt = c["cx0"], c["rt"]
-        tx0, tx1, ty = cx0, cx0 + 100, 78.0 * min(1.0, c["cy"] / 105)
+        tl = 100.0 if self.sty["gun_bow"] else 142.0         # room for the mast outside the turret's swing
+        tl = min(tl, c["wx"] - cx0 - 14)
+        tx0, tx1, ty = cx0, cx0 + tl, 78.0 * min(1.0, c["cy"] / 105)
         tz = rt + self.sty["tower_h"]
         cabin, cabd, fr = P["cabin"], P["cabin_d"], P["frame"]
         tw = K.new_weld()                     # the tower can be shot off the roof as one piece
@@ -876,11 +911,11 @@ class Builder:
             K.box(tx0 + 3, tx1 - 16, -ty + 3, ty - 3, rt, tz - 4, HIDDEN, "Float", "Float")
         if self.eq >= 1 and self.sty["lattice"]:
             top = (tx0 + 8, 0, tz + 110)
-            for lx, ly in ((tx0 - 6, -22), (tx0 - 6, 22), (tx0 + 22, 0)):
+            for lx, ly in ((tx0 - 4, -14), (tx0 - 4, 14), (tx0 + 16, 0)):
                 K.rod((lx, ly, tz), top, 4, fr, "Aluminium", extend=2)
-            for zz, half in ((tz + 45, 34), (tz + 85, 22)):
+            for zz, half in ((tz + 45, 20), (tz + 85, 14)):
                 K.box(tx0 + 3, tx0 + 13, -half, half, zz, zz + 4, fr, "Aluminium")
-            K.box(tx0 - 30, tx0 + 46, -5, 5, tz + 111, tz + 117, WHITE, "Plastic")
+            K.box(tx0 - 26, tx0 + 22, -5, 5, tz + 111, tz + 117, WHITE, "Plastic")
             K.box(tx0 + 4, tx0 + 12, -4, 4, tz + 117, tz + 123, (240, 240, 230, 255), "Glow", "LightBrick",
                   extra={"Brightness": 0.6, "InputChannel.InputAxis": "Headlight"})
         else:
@@ -890,36 +925,39 @@ class Builder:
                 K.box(tx0 - 2, tx0 + 18, -10, 10, tz + 70, tz + 80, cabd, "Aluminium")
                 ly = tz + 80
             if self.eq >= 1:
-                K.box(tx0 - 30, tx0 + 46, -4, 4, tz + 80, tz + 86, WHITE, "Plastic")
+                K.box(tx0 - 26, tx0 + 22, -4, 4, tz + 80, tz + 86, WHITE, "Plastic")
                 ly = tz + 86
             lx = tx0 + 2 if self.eq >= 1 else tx0 + 8          # light centred on the mast (top)
             K.box(lx - 4, lx + 4, -4, 4, ly, ly + 6, (240, 240, 230, 255), "Glow", "LightBrick",
                   extra={"Brightness": 0.6, "InputChannel.InputAxis": "Headlight"})
         if self.eq >= 1:
             for s in (1, -1):
-                K.rod((tx0 + 10, s * (ty - 8), tz), (tx0 + 10, s * (ty - 8), tz + 170), 2.5, fr, "Rubber")
                 y0, y1 = sorted((s * 30, s * 52))
-                K.box(tx0 + 32, tx0 + 60, y0, y1, tz, tz + 18, (58, 62, 52, 255), "Steel")
+                K.box(tx0 + 24, tx0 + 52, y0, y1, tz, tz + 18, (58, 62, 52, 255), "Steel")
         if self.sty["gun_bow"]:
             # gun on the foredeck, in front of the wheelhouse (pedestal welded to the deck section)
             ln = self.ln
             xg = min(ln.X0 + 0.78 * ln.L, c["cx1"] + 115)
             zd = ln.sheer_z(xg + 31)
             K.weld = self.chunk_of[self.sec_of(xg + 31)]
-            ped = (xg, xg + 62, -22.0, 22.0, zd, zd + 58.0)
+            # tall enough that the barrel clears the bow rails / bulwarks in every direction
+            top_obst = max(ln.sheer_z(x) for x in (xg, ln.X1 - 0.02 * ln.L)) + self.sty["rail_h"] + 14
+            ped_h = max(58.0, top_obst - 37.0 - zd)
+            ped = (xg, xg + 62, -22.0, 22.0, zd, zd + ped_h)
             K.box(*ped, STEEL, "Aluminium")
             if self.eq >= 1:
                 K.box(xg - 8, xg + 70, -30, 30, zd, zd + 6, STEEL, "Steel")
-            self.station(ped, K.weld, 115.0, -4.0)
+            self.station(ped, K.weld, 115.0, 0.0)         # cannot swing into the wheelhouse
         else:
-            ped = (tx0 + 28, tx0 + 90, -22.0, 22.0, tz, tz + 24.0)
+            ped = (tx1 - 72, tx1 - 10, -22.0, 22.0, tz, tz + 24.0)
             K.box(*ped, STEEL, "Aluminium")
-            self.station(ped, tw, 160.0, -10.0)
+            self.station(ped, tw, 150.0, -5.0)            # mast stays in the dead sector aft
         K.weld = self.cab_w
 
     def station(self, ped, base_weld, yaw, pitch_min):
         """Weapon station from the user's PU1, aimed and fired from the gunner seat."""
         K = self.K
+        self.turret_ped, self.turret_ped_weld = ped, base_weld
         tz = ped[4]
         gunner = self.seats[1]
         tb = load_station()
@@ -930,9 +968,11 @@ class Builder:
         remap = {old: base + n for n, old in enumerate(keep)}
         plate_bottom = tb[0].pos[2] - tb[0].get("BrickSize")[2] / 2
         ox, oz = ped[0] + 32 - 0.6, ped[5] - plate_bottom
-        welds = {0: 0, 2: base_weld}
+        welds = {0: base_weld, 2: base_weld}      # fire-control logic welded to the pedestal
         for g in (1, 4):
             welds[g] = K.new_weld()
+        self.turret = {"moving": (welds[1], welds[4]), "first": len(K.v.bricks), "base": base_weld}
+        self.protect.update((welds[1], welds[4]))
         K.weld = self.cab_w
         for old in keep:
             b = copy.deepcopy(tb[old])
@@ -1014,7 +1054,7 @@ class Builder:
         # helm seat: leaning post with a backrest, or a pedestal chair
         sx = x0 - 55
         if self.eq >= 1 and not side:
-            K.box(sx - 32, sx + 8, yc - 34, yc + 34, fz, fz + 14, P["cabin_d"], "Plastic")
+            K.box(sx - 32, sx + 8, yc - 34, yc + 34, fz, fz + 14, P["cabin_d"], "Float", "Float")
             K.box(sx - 30, sx - 22, yc - 30, yc + 30, fz + 60, fz + 100, (40, 40, 42, 255), "Rubber")
             K.rod((sx - 26, yc - 26, fz + 14), (sx - 26, yc - 26, fz + 62), 3, CHROME)
             K.rod((sx - 26, yc + 26, fz + 14), (sx - 26, yc + 26, fz + 62), 3, CHROME)
@@ -1040,6 +1080,68 @@ class Builder:
             if hwf > 25:
                 K.box(xf, xf + 80, -hwf, hwf, ln.sheer_z(xf), zf + 8, (46, 48, 52, 255), "Foam")
             K.weld = w
+
+    # ------------------------------------------------------------------ factions (patrol boats only)
+    EAGLE = [  # (u, v, length, height, angle) - flat steppe eagle facing the bow, ~60 x 44 cm
+        (0, -2, 8, 22, 0), (0, 12, 7, 7, 0), (4.5, 11, 5, 3, -25), (0, -16, 11, 7, 0),
+        (-10, 4, 19, 6, 22), (-22, 10, 17, 5, 34), (-11, -2, 17, 5, 6), (-23, 2, 14, 4, 14),
+        (10, 4, 19, 6, -22), (22, 10, 17, 5, -34), (11, -2, 17, 5, -6), (23, 2, 14, 4, -14),
+        (-3, -12, 3, 6, 0), (3, -12, 3, 6, 0)]
+
+    def emblem(self, which, xc, yw, zc, s, sc):
+        """Flat emblem on a vertical wall at y = yw (outward side s): 'III' bars or the eagle."""
+        K = self.K
+        if which == "south":
+            for j in (-1, 0, 1):
+                x = xc + j * 10 * sc
+                y0, y1 = sorted((yw, yw + s * 0.8))
+                K.box(x - 2.6 * sc, x + 2.6 * sc, y0, y1, zc - 16 * sc, zc + 16 * sc, (236, 236, 232, 255), "Plastic")
+        else:
+            gold = (214, 168, 44, 255)
+            for u, v, ln_, h, a in self.EAGLE:
+                ar = math.radians(a)
+                X = (math.cos(ar), 0.0, math.sin(ar))
+                K.obox((xc + u * sc, yw + s * 0.4, zc + v * sc), X, (0, s, 0), (ln_ * sc, h * sc, 0.8), gold,
+                       "Plastic")
+
+    def faction_marks(self):
+        if not self.faction or not hasattr(self, "cab") or self.eq < 1:
+            return
+        K, ln, c = self.K, self.ln, self.cab
+        K.weld = self.cab_w
+        x0, x1 = c["dx1"] + 14, c["cx1"] - 14
+        hwall = c["zs"] - c["D"]
+        sc = max(0.5, min(1.0, (hwall - 12) / 44.0, (x1 - x0) / 66.0))
+        xc, zc = (x0 + x1) / 2, c["D"] + hwall * 0.52
+        for s in (1, -1):
+            self.emblem(self.faction, xc, s * c["cy"], zc, s, sc)
+        if self.faction != "south":
+            return
+        r = random.Random("worn-%d" % self.seed)
+        # mismatched repair patches on the wheelhouse walls
+        for s in (1, -1):
+            for _ in range(r.choice((1, 2))):
+                w, h = r.uniform(16, 30), r.uniform(12, 24)
+                xp = r.choice((c["cx1"] - 8 - w / 2, x0 - 6 - w / 2)) if x0 - 6 - w > c["dx1"] else c["cx1"] - 8 - w / 2
+                zp = r.uniform(c["D"] + 6 + h / 2, c["zs"] - 6 - h / 2)
+                y0, y1 = sorted((s * c["cy"], s * (c["cy"] + 0.6)))
+                col = r.choice(((96, 66, 44), (72, 76, 58), (92, 94, 96)))
+                K.box(xp - w / 2, xp + w / 2, y0, y1, zp - h / 2, zp + h / 2, rgba(col), "Steel")
+        # jerry cans on the aft deck, lashed to the transom
+        K.weld = self.chunk_of[0]
+        for j in range(r.choice((2, 3))):
+            y = (j - 1) * 24 + r.uniform(-3, 3)
+            zx = ln.sheer_z(ln.X0 + 8)
+            K.box(ln.X0 + 3, ln.X0 + 14, y - 9, y + 9, zx, zx + 28, (66, 74, 48, 255), "Steel")
+        # sandbags round the gun
+        t = getattr(self, "turret_ped", None)
+        if t:
+            px0, px1, py0, py1, pz0, _ = t
+            sand = (150, 134, 98, 255)
+            K.weld = self.turret_ped_weld
+            for (a0, a1, b0, b1) in ((px1 + 1, px1 + 17, -30, 30), (px0 - 6, px1 + 1, py1 + 1, py1 + 15),
+                                     (px0 - 6, px1 + 1, py0 - 15, py0 - 1)):
+                K.box(a0, a1, b0, b1, pz0, pz0 + 12, sand, "Rubber")
 
     # ------------------------------------------------------------------ deck gear
     def gear(self):
@@ -1098,6 +1200,8 @@ class Builder:
                 if eq >= 1:
                     K.rod((xs[0], s * yr, ln.D + 35), (xs[-1], s * yr, ln.D + 35), 2.5, CHROME, extend=1)
                 K.rod((xs[0], s * yr, ln.D + rh), (xs[0], s * 0.65 * ln.hw, ln.D + rh), 3.5, CHROME, extend=2)
+                if self.kind == "military" and eq >= 1 and self.sty["antennas"] >= (1 if s > 0 else 2):
+                    K.rod((xs[0], s * yr, ln.D + rh), (xs[0], s * yr, ln.D + rh + 190), 2.2, (30, 30, 32, 255), "Rubber")
                 K.box(xs[0] - 2, xs[0] + 2, s * 0.65 * ln.hw - 2, s * 0.65 * ln.hw + 2, ln.D, ln.D + rh, CHROME,
                       "Chrome")
         # cleats
@@ -1188,16 +1292,84 @@ class Builder:
     def build(self, name):
         self.name = name
         self.float_cells = []
+        self.protect = set()
         self.plan_stabilisers()
         self.hull()
         self.lockers()
         self.stabilisers()
         self.cabin()
         self.gear()
+        self.faction_marks()
         self.outboards()
+        self.unweld_contacts()
         self.balance()
         self.tune()
         return self.K
+
+    def unweld_contacts(self):
+        """Do not weld what is already held: an axis-aligned box that sits face-to-face on another
+        axis-aligned box connects through its connectors like any brick placed in the editor.
+        Such bricks leave their weld group - unless a slanted brick of the same group leans on
+        them (then they are what holds that slanted brick).  Every unwelded brick keeps a chain of
+        face contacts back to a welded anchor, so nothing comes loose by itself."""
+        K, v = self.K, self.K.v
+        n = len(v.bricks)
+        hidden = {it[0] for it in K.items if it[4]}
+        first = self.turret["first"] if hasattr(self, "turret") else n
+        BOX = {"ScalableBrick", "Float", "TankBrick", "LightBrick"}
+        info = []
+        for i, b in enumerate(v.bricks):
+            R = rotm(b.rot)
+            ax = all(abs(abs(c) - 1) < 1e-4 or abs(c) < 1e-4 for row in R for c in row)
+            lo, hi = K.aabb(i)
+            info.append((ax and b.type in BOX, lo, hi))
+        cell = 60.0
+        grid = {}
+        for i, (ab, lo, hi) in enumerate(info):
+            for gx in range(int(lo[0] // cell), int(hi[0] // cell) + 1):
+                for gy in range(int(lo[1] // cell), int(hi[1] // cell) + 1):
+                    for gz in range(int(lo[2] // cell), int(hi[2] // cell) + 1):
+                        grid.setdefault((gx, gy, gz), []).append(i)
+
+        def near(i):
+            lo, hi = info[i][1], info[i][2]
+            out = set()
+            for gx in range(int((lo[0] - 1) // cell), int((hi[0] + 1) // cell) + 1):
+                for gy in range(int((lo[1] - 1) // cell), int((hi[1] + 1) // cell) + 1):
+                    for gz in range(int((lo[2] - 1) // cell), int((hi[2] + 1) // cell) + 1):
+                        out.update(grid.get((gx, gy, gz), ()))
+            out.discard(i)
+            return out
+
+        def face(a, b):
+            (_, la, ha), (_, lb, hb) = info[a], info[b]
+            for k in range(3):
+                if abs(ha[k] - lb[k]) < 0.35 or abs(hb[k] - la[k]) < 0.35:
+                    o = [min(ha[m], hb[m]) - max(la[m], lb[m]) for m in range(3) if m != k]
+                    if min(o) >= 2.0:
+                        return True
+            return False
+
+        def touch(a, b):
+            (_, la, ha), (_, lb, hb) = info[a], info[b]
+            return all(la[m] - 0.5 < hb[m] and lb[m] - 0.5 < ha[m] for m in range(3))
+
+        cand = set()
+        for i, b in enumerate(v.bricks):
+            if (info[i][0] and b.group and b.group not in self.protect and i not in hidden and i < first):
+                if not any(v.bricks[j].group == b.group and not info[j][0] and touch(i, j) for j in near(i)):
+                    cand.add(i)
+        attached = {i for i in range(n) if info[i][0] and i not in cand and v.bricks[i].group}
+        changed = True
+        while changed:
+            changed = False
+            for i in sorted(cand):
+                if any(j in attached and face(i, j) for j in near(i)):
+                    v.bricks[i].group = 0
+                    attached.add(i)
+                    cand.discard(i)
+                    changed = True
+        self.unwelded = sum(1 for b in v.bricks if b.group == 0)
 
     def tune(self):
         """Engine and stabiliser strength from the boat's mass and size.
@@ -1360,7 +1532,7 @@ def make_name(kind, seed):
     return "%s-%d" % (r.choice(pre), r.randint(2, 99))
 
 
-def generate(kind="military", size="M", detail="med", color="dark", seed=1, name=None):
+def generate(kind="military", size="M", detail="med", color="dark", seed=1, name=None, faction=None):
     lo_t, hi_t = DETAIL[detail]
     target = (lo_t + hi_t) / 2
     name = name or make_name(kind, seed)
@@ -1370,7 +1542,7 @@ def generate(kind="military", size="M", detail="med", color="dark", seed=1, name
 
     def run(r):
         if r not in tried:
-            bld = Builder(kind, size, detail, color, seed, r)
+            bld = Builder(kind, size, detail, color, seed, r, faction)
             bld.build(name)
             tried[r] = bld
         return tried[r]

@@ -29,6 +29,12 @@
       copied: "Скопировано в папку игры", copy_fail: "Не удалось скопировать: ", no_game: "Папка игры не найдена — перенесите папку вручную (см. «⋯»)",
       support: "Можете поддержать меня подарками в Steam", sound: "Звук", fullscreen: "Во весь экран (F11)",
       st_engines: "Моторов", st_stab: "Стабилизаторы",
+      s_title: "Настройки", s_theme: "Тема интерфейса", th_blue: "Синяя", th_green: "Зелёная", th_red: "Красная", th_grey: "Серая",
+      s_faction: "Фракция (только военные катера)", f_none: "Без фракции", f_none_d: "Обычный патрульный катер",
+      f_south: "Южное государство", f_south_d: "Знак — белое «III». Катер немного поношенный, кое-что сделано «на коленке»",
+      f_tanata: "Новая Таната", f_tanata_d: "Знак — степной орёл",
+      s_sound: "Звуки", on: "Включены", s_preview: "3D-превью", s_water: "Вода", s_rotate: "Автоповорот",
+      s_other: "Разное", s_motion: "Анимации", s_copy: "Сразу копировать в Brick Rigs", settings: "Настройки",
       gen_fail: "Ошибка генерации: ", save_fail: "Не удалось сохранить: ", no_webgl: "3D-превью недоступно на этом компьютере, но лодка сгенерирована.",
     },
     en: {
@@ -57,6 +63,12 @@
       copied: "Copied to the game folder", copy_fail: "Copy failed: ", no_game: "Game folder not found — move the folder manually (see “⋯”)",
       support: "You can support me with gifts on Steam", sound: "Sound", fullscreen: "Full screen (F11)",
       st_engines: "Engines", st_stab: "Stabilisers",
+      s_title: "Settings", s_theme: "Interface theme", th_blue: "Blue", th_green: "Green", th_red: "Red", th_grey: "Grey",
+      s_faction: "Faction (patrol boats only)", f_none: "No faction", f_none_d: "Plain patrol boat",
+      f_south: "Southern State", f_south_d: "White “III” mark. The boat looks a bit worn, some parts improvised",
+      f_tanata: "New Tanata", f_tanata_d: "Steppe eagle mark",
+      s_sound: "Sounds", on: "On", s_preview: "3D preview", s_water: "Water", s_rotate: "Auto-rotate",
+      s_other: "Other", s_motion: "Animations", s_copy: "Copy to Brick Rigs right away", settings: "Settings",
       gen_fail: "Generation error: ", save_fail: "Could not save: ", no_webgl: "3D preview is not available on this PC, but the boat was generated.",
     },
   };
@@ -86,7 +98,7 @@
 
   // ------------------------------------------------------------------ sounds (synthesised, quiet)
   const sfx = (function () {
-    let ctx = null, muted = false;
+    let ctx = null, muted = false, volume = 0.6;
     try { muted = localStorage.getItem("bg_muted") === "1"; } catch (e) {}
     function ac() {
       if (!ctx) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } }
@@ -100,7 +112,7 @@
       o.type = type || "sine"; o.frequency.setValueAtTime(freq, t);
       if (slide) o.frequency.exponentialRampToValueAtTime(slide, t + dur);
       g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(vol || 0.05, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(Math.max(0.0002, (vol || 0.05) * volume * 1.6), t + 0.01);
       g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
       o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + dur + 0.02);
     }
@@ -111,7 +123,7 @@
       const src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
       src.buffer = buf; f.type = "bandpass"; f.Q.value = 0.8;
       f.frequency.setValueAtTime(from, c.currentTime); f.frequency.exponentialRampToValueAtTime(to, c.currentTime + dur);
-      g.gain.value = vol; src.connect(f); f.connect(g); g.connect(c.destination); src.start();
+      g.gain.value = vol * volume * 1.6; src.connect(f); f.connect(g); g.connect(c.destination); src.start();
     }
     return {
       click() { tone(620, 0.06, "triangle", 0.035); },
@@ -120,6 +132,7 @@
       done() { [523, 659, 784].forEach((f, i) => tone(f, 0.22, "sine", 0.045, i * 0.09)); },
       error() { tone(260, 0.16, "triangle", 0.05, 0, 180); },
       get muted() { return muted; },
+      set(m, v) { muted = !!m; if (v != null) volume = +v; },
       toggle() { muted = !muted; try { localStorage.setItem("bg_muted", muted ? "1" : "0"); } catch (e) {} return muted; },
     };
   })();
@@ -131,7 +144,8 @@
     $$("[data-t]").forEach((el) => { el.textContent = t(el.dataset.t); });
     $$("#langSeg button").forEach((b) => b.classList.toggle("sel", b.dataset.lang === state.lang));
     $("#langMini").textContent = state.lang.toUpperCase();
-    $("#soundBtn").title = t("sound"); $("#fsBtn").title = t("fullscreen");
+    $("#soundBtn").title = t("sound"); $("#fsBtn").title = t("fullscreen"); $("#setBtn").title = t("settings");
+    $$("#langSeg2 button").forEach((b) => b.classList.toggle("sel", b.dataset.lang === state.lang));
     updateDims(); updateSummary();
     if (state.result) renderInfo(state.result);
   }
@@ -175,14 +189,16 @@
   function updateSummary() {
     const s = t("sum").replace("{kind}", "<b>" + t("k_" + state.kind) + "</b>").replace("{size}", t("sz_" + state.size))
       .replace("{detail}", t("d_" + state.detail).toLowerCase()).replace("{color}", t("c_" + state.color).toLowerCase());
-    $("#summary").innerHTML = s;
+    const f = prefs.faction;
+    $("#summary").innerHTML = s + (state.kind === "military" && f !== "none"
+      ? '<span class="faction-chip">' + (f === "south" ? "III · " : "🦅 ") + t("f_" + f) + "</span>" : "");
   }
 
   // ------------------------------------------------------------------ preview
   let viewer = null;
   function ensureViewer() {
     if (viewer) return viewer;
-    try { viewer = new window.BoatViewer($("#gl")); if (!viewer.gl) throw new Error("no webgl"); }
+    try { viewer = new window.BoatViewer($("#gl")); if (!viewer.gl) throw new Error("no webgl"); viewer.showWater = prefs.water; viewer.autoRotate = prefs.autorotate; }
     catch (e) { viewer = { gl: null, setScene() {}, capture() { return null; }, reset() {} }; toast(t("no_webgl"), true); }
     return viewer;
   }
@@ -241,6 +257,7 @@
       $("#copyBtn").style.display = r.game_found ? "" : "none";
       $("#copyBtn").disabled = false;
       go("done"); setTimeout(sfx.done, 250);
+      if (r.copied) { toast(t("copied") + ": " + r.copied); $("#copyBtn").disabled = true; }
     } catch (e) {
       toast(t("save_fail") + e.message, true); sfx.error();
     } finally {
@@ -256,8 +273,48 @@
     clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("on"), 3600);
   }
 
+  // ------------------------------------------------------------------ settings
+  const prefs = { theme: "blue", faction: "none", sound: true, volume: 0.6, motion: true, water: true, autorotate: true, autocopy: false };
+  function applyPrefs() {
+    document.documentElement.dataset.theme = prefs.theme;
+    document.body.classList.toggle("no-motion", !prefs.motion);
+    sfx.set(!prefs.sound, prefs.volume);
+    $("#soundBtn").classList.toggle("muted", !prefs.sound);
+    if (viewer && viewer.gl) { viewer.showWater = prefs.water; viewer.autoRotate = prefs.autorotate; }
+    $$("#themePick button").forEach((b) => b.classList.toggle("sel", b.dataset.v === prefs.theme));
+    $$("#factionPick button").forEach((b) => b.classList.toggle("sel", b.dataset.v === prefs.faction));
+    $("#pSound").checked = prefs.sound; $("#pVolume").value = prefs.volume;
+    $("#pWater").checked = prefs.water; $("#pRotate").checked = prefs.autorotate;
+    $("#pMotion").checked = prefs.motion; $("#pCopy").checked = prefs.autocopy;
+    updateSummary();
+  }
+  function setPref(k, v) {
+    prefs[k] = v; applyPrefs();
+    api("set_prefs", { [k]: v }).catch(() => null);
+  }
+  function openSettings(on) {
+    $("#settings").classList.toggle("on", on);
+    $("#settings").setAttribute("aria-hidden", on ? "false" : "true");
+  }
+  function initSettings() {
+    $("#setBtn").addEventListener("click", () => openSettings(true));
+    $("#setClose").addEventListener("click", () => openSettings(false));
+    $("#settings").addEventListener("click", (e) => { if (e.target.id === "settings") openSettings(false); });
+    $$("#themePick button").forEach((b) => b.addEventListener("click", () => { setPref("theme", b.dataset.v); sfx.select(); }));
+    $$("#factionPick button").forEach((b) => b.addEventListener("click", () => { setPref("faction", b.dataset.v); sfx.select(); }));
+    $$("#langSeg2 button").forEach((b) => b.addEventListener("click", () => setLang(b.dataset.lang)));
+    $("#pSound").addEventListener("change", (e) => setPref("sound", e.target.checked));
+    $("#pVolume").addEventListener("input", (e) => { prefs.volume = +e.target.value; sfx.set(!prefs.sound, prefs.volume); });
+    $("#pVolume").addEventListener("change", (e) => { setPref("volume", +e.target.value); sfx.select(); });
+    $("#pWater").addEventListener("change", (e) => setPref("water", e.target.checked));
+    $("#pRotate").addEventListener("change", (e) => setPref("autorotate", e.target.checked));
+    $("#pMotion").addEventListener("change", (e) => setPref("motion", e.target.checked));
+    $("#pCopy").addEventListener("change", (e) => setPref("autocopy", e.target.checked));
+  }
+
   // ------------------------------------------------------------------ wiring
   function init() {
+    initSettings();
     // tick marks on cards
     $$(".card").forEach((c) => c.insertAdjacentHTML("beforeend", '<span class="tick"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>'));
     $$("#langSeg button").forEach((b) => b.addEventListener("click", () => setLang(b.dataset.lang)));
@@ -277,8 +334,7 @@
     });
     // buttons click softly
     document.addEventListener("click", (e) => { if (e.target.closest(".btn, .icon-btn, .lang-mini, #langSeg button")) sfx.click(); });
-    $("#soundBtn").classList.toggle("muted", sfx.muted);
-    $("#soundBtn").addEventListener("click", () => { $("#soundBtn").classList.toggle("muted", sfx.toggle()); });
+    $("#soundBtn").addEventListener("click", () => setPref("sound", !prefs.sound));
     // full screen: F11 / button / Esc
     async function fullscreen(force) {
       const r = await api("toggle_fullscreen").catch(() => null);
@@ -298,17 +354,22 @@
     }));
     document.addEventListener("keydown", (e) => {
       if (e.key === "F11") { e.preventDefault(); fullscreen(); return; }
-      if (e.key === "Escape") { api("exit_fullscreen").catch(() => null); return; }
+      if (e.key === "Escape") {
+        if ($("#settings").classList.contains("on")) { openSettings(false); return; }
+        api("exit_fullscreen").catch(() => null); return;
+      }
       if (e.key !== "Enter" || state.busy) return;
       if (state.screen === "welcome") $("#startBtn").click();
       else if (state.screen === "menu") $("#okMenu").click();
     });
-    syncSel(); applyLang(); go("welcome");
+    syncSel(); applyLang(); applyPrefs(); go("welcome");
     ready().then(() => api("get_state")).then((s) => {
       if (!s) return;
       state.lang = s.lang || "ru";
       if (s.last) for (const k of ["kind", "size", "detail", "color"]) if (s.last[k]) state[k] = s.last[k];
       state.game_found = s.game_found; state.game_dir = s.game_dir;
+      if (s.prefs) Object.assign(prefs, s.prefs);
+      applyPrefs();
       $("#gameDir").textContent = s.game_dir;
       syncSel(); applyLang();
     }).catch(() => {});

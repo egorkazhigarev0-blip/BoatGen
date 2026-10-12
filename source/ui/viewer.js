@@ -216,7 +216,7 @@ void main() {
     let last = performance.now();
     const loop = (t) => {
       const dt = Math.min(0.05, (t - last) / 1000); last = t;
-      if (this.auto) this.yaw += dt * 0.22;
+      if (this.auto && this.autoRotate !== false) this.yaw += dt * 0.22;
       if (!this.drag) {
         this.yaw += this.vyaw; this.pitch += this.vpitch;
         this.vyaw *= 0.92; this.vpitch *= 0.92;

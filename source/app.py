@@ -15,7 +15,7 @@ import threading
 import traceback
 
 APP_NAME = "BoatGen"
-VERSION = "1.1"
+VERSION = "1.2"
 
 
 # ----------------------------------------------------------------------------- paths
@@ -104,7 +104,28 @@ class Api:
     def get_state(self):
         return {"lang": self._settings.get("lang", "ru"), "version": VERSION,
                 "game_dir": game_vehicles_dir(), "game_found": os.path.isdir(game_vehicles_dir()),
-                "output": OUTPUT, "last": self._settings.get("last")}
+                "output": OUTPUT, "last": self._settings.get("last"), "prefs": self.get_prefs()}
+
+    DEFAULT_PREFS = {"theme": "blue", "faction": "none", "sound": True, "volume": 0.6, "motion": True,
+                     "water": True, "autorotate": True, "autocopy": False}
+
+    def get_prefs(self):
+        p = dict(self.DEFAULT_PREFS)
+        p.update({k: v for k, v in (self._settings.get("prefs") or {}).items() if k in p})
+        return p
+
+    def set_prefs(self, prefs):
+        p = self.get_prefs()
+        for k, v in (prefs or {}).items():
+            if k in p and type(v) in (type(p[k]), int, float, bool, str):
+                p[k] = v
+        if p["theme"] not in ("blue", "green", "red", "grey"):
+            p["theme"] = "blue"
+        if p["faction"] not in ("none", "south", "tanata"):
+            p["faction"] = "none"
+        self._settings["prefs"] = p
+        save_settings(self._settings)
+        return p
 
     def set_lang(self, lang):
         self._settings["lang"] = lang if lang in ("ru", "en") else "ru"
@@ -121,7 +142,8 @@ class Api:
                 color = params.get("color", "dark")
                 lang = params.get("lang", self._settings.get("lang", "ru"))
                 seed = random.randint(1, 999999)
-                r = generate(kind, size, detail, color, seed)
+                fac = self.get_prefs()["faction"]
+                r = generate(kind, size, detail, color, seed, faction=None if fac == "none" else fac)
                 self._last, self._params, self._saved = r, dict(params), None
                 self._settings["last"] = {"kind": kind, "size": size, "detail": detail, "color": color}
                 save_settings(self._settings)
@@ -159,11 +181,15 @@ class Api:
                     f.write("%s - BoatGen %s\n\n" % (name, VERSION))
                     f.write("\n".join(controls(self._last.info["kind"], lang)) + "\n")
                 self._saved = folder
-                return {"ok": True, "path": folder, "folder": os.path.basename(folder),
-                        "game_dir": game_vehicles_dir(), "game_found": os.path.isdir(game_vehicles_dir())}
+                out = {"ok": True, "path": folder, "folder": os.path.basename(folder),
+                       "game_dir": game_vehicles_dir(), "game_found": os.path.isdir(game_vehicles_dir())}
             except Exception as e:
                 traceback.print_exc()
                 return {"ok": False, "error": "%s: %s" % (type(e).__name__, e)}
+        if self.get_prefs()["autocopy"] and out["game_found"]:
+            c = self.copy_to_game()
+            out["copied"] = c.get("path") if c.get("ok") else None
+        return out
 
     def copy_to_game(self):
         if not self._saved:
