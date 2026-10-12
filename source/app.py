@@ -199,6 +199,25 @@ class Api:
 
 
 # ----------------------------------------------------------------------------- browser fallback
+def open_app_window(url):
+    """Open the interface as a separate app window (Edge/Chrome --app: no tabs, no address bar)."""
+    if not sys.platform.startswith("win"):
+        return False
+    pf = [os.environ.get(k, "") for k in ("ProgramFiles(x86)", "ProgramFiles", "LOCALAPPDATA")]
+    cands = [os.path.join(b, *rel) for b in pf if b for rel in (
+        ("Microsoft", "Edge", "Application", "msedge.exe"), ("Google", "Chrome", "Application", "chrome.exe"))]
+    prof = os.path.join(app_dir(), "window_profile")
+    for exe in cands:
+        if os.path.isfile(exe):
+            try:
+                subprocess.Popen([exe, "--app=" + url, "--window-size=1180,800", "--user-data-dir=" + prof,
+                                  "--no-first-run", "--no-default-browser-check"])
+                return True
+            except Exception:
+                continue
+    return False
+
+
 def run_browser(api, port=0, open_browser=True):
     import http.server
     import socketserver
@@ -235,7 +254,8 @@ def run_browser(api, port=0, open_browser=True):
     url = "http://127.0.0.1:%d/index.html?browser=1" % srv.server_address[1]
     print("BoatGen:", url)
     if open_browser:
-        webbrowser.open(url)
+        if not open_app_window(url):
+            webbrowser.open(url)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
