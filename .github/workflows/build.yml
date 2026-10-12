@@ -2,6 +2,8 @@ name: Build BoatGen.exe
 on:
   push:
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: windows-latest
@@ -23,3 +25,14 @@ jobs:
         with:
           name: BoatGen
           path: dist/BoatGen
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path dist/BoatGen -DestinationPath BoatGen-win.zip
+      - name: Publish download
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: BoatGen (скачать)
+          body: "Скачайте BoatGen-win.zip ниже, распакуйте и запустите BoatGen.exe"
+          files: BoatGen-win.zip
+          make_latest: true
