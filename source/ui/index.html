@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BoatGen</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="icon.png">
+</head>
+<body>
+<div class="bg"><div class="bg-glow g1"></div><div class="bg-glow g2"></div><svg class="bg-waves" viewBox="0 0 1200 200" preserveAspectRatio="none"><path d="M0 120 C 200 80 400 160 600 120 S 1000 80 1200 120 V200 H0Z"/><path d="M0 150 C 250 110 450 190 650 150 S 1000 120 1200 150 V200 H0Z"/></svg></div>
+
+<header class="topbar">
+  <div class="brand"><svg viewBox="0 0 32 32" class="logo"><path d="M4 19h24l-3.5 6.2a3 3 0 0 1-2.6 1.5H10.1a3 3 0 0 1-2.6-1.5Z"/><path d="M11 18V11h7l4 7" class="logo-cab"/><path d="M3 29c2.5 0 2.5-1.4 5-1.4s2.5 1.4 5 1.4 2.5-1.4 5-1.4 2.5 1.4 5 1.4 2.5-1.4 5-1.4" class="logo-wave"/></svg><span>BoatGen</span></div>
+  <div class="steps" id="steps"><i></i><i></i><i></i><i></i></div>
+  <button class="lang-mini" id="langMini" title="Language">RU</button>
+</header>
+
+<main id="app">
+  <!-- 1. welcome -->
+  <section class="screen" id="s-welcome">
+    <div class="welcome">
+      <div class="hero-boat">
+        <svg viewBox="0 0 420 160">
+          <defs><linearGradient id="hb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9FB4CC"/><stop offset="1" stop-color="#3E4E63"/></linearGradient></defs>
+          <path class="hb-hull" d="M30 92h330l40-14-18 30c-6 10-16 16-28 16H70c-14 0-24-6-30-14Z" fill="url(#hb)"/>
+          <path class="hb-cab" d="M150 92V58h120l34 34Z"/>
+          <path class="hb-win" d="M262 64l26 26h-30V64Z M170 66h36v18h-36Z M214 66h38v18h-38Z"/>
+          <path class="hb-mast" d="M160 58V20"/><path class="hb-dome" d="M174 58a13 12 0 0 1 26 0Z"/>
+          <path class="hb-gun" d="M210 58v-10h28v10Z M236 51h52"/>
+          <path class="hb-wake" d="M10 128c40 0 60-10 100-10s70 12 120 12 80-10 120-10 40 6 60 8"/>
+        </svg>
+      </div>
+      <h1 data-t="w_title">Генератор лодок для Brick Rigs</h1>
+      <p class="lead" data-t="w_lead">BoatGen собирает готовую постройку — катер или лодку — со всеми механизмами, и сохраняет её папкой, которую можно сразу открыть в игре.</p>
+      <div class="how">
+        <div class="how-i"><b>1</b><span data-t="w_s1">Выберите тип, размер, детализацию и цвет</span></div>
+        <div class="how-i"><b>2</b><span data-t="w_s2">Посмотрите лодку в 3D и при желании сгенерируйте другой вариант</span></div>
+        <div class="how-i"><b>3</b><span data-t="w_s3">Заберите папку с постройкой и положите её в папку транспорта игры</span></div>
+      </div>
+      <div class="lang-pick">
+        <span data-t="w_lang">Язык интерфейса</span>
+        <div class="seg" id="langSeg">
+          <button data-lang="ru"><span class="flag">RU</span> Русский</button>
+          <button data-lang="en"><span class="flag">EN</span> English</button>
+        </div>
+      </div>
+      <button class="btn primary big" id="startBtn"><span data-t="w_start">Начать</span><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+    </div>
+  </section>
+
+  <!-- 2. main menu -->
+  <section class="screen" id="s-menu">
+    <div class="menu">
+      <div class="menu-head"><h2 data-t="m_title">Параметры лодки</h2><p data-t="m_sub">Выберите четыре параметра и нажмите «Создать».</p></div>
+
+      <div class="group">
+        <div class="glabel"><span class="gnum">1</span><span data-t="m_type">Тип лодки</span></div>
+        <div class="cards three" id="kindCards">
+          <button class="card kind" data-v="motor">
+            <svg viewBox="0 0 200 70" class="sil"><path class="sil-hull" d="M20 44h140l22-8-9 14c-3 5-8 8-14 8H44c-9 0-15-5-18-10Z"/><path class="sil-dark" d="M92 44V30h16l4 14Z M98 30l-4-10h4"/><path class="sil-dark" d="M14 34h10v20h-6Z"/></svg>
+            <div class="ctitle" data-t="k_motor">Моторная лодка</div>
+            <div class="cdesc" data-t="k_motor_d">Открытая, с пультом и подвесным мотором</div>
+          </button>
+          <button class="card kind" data-v="cutter">
+            <svg viewBox="0 0 200 70" class="sil"><path class="sil-hull" d="M14 44h150l24-9-10 15c-3 5-9 8-15 8H38c-9 0-16-5-20-10Z"/><path class="sil-dark" d="M70 44V24h56l20 20Z"/><path class="sil-win" d="M122 28l14 14h-16V28Z M78 28h16v8H78Z M98 28h18v8H98Z"/><path class="sil-dark" d="M8 32h10v20H12Z"/></svg>
+            <div class="ctitle" data-t="k_cutter">Простой катер</div>
+            <div class="cdesc" data-t="k_cutter_d">Катер с рубкой, дверью и стабилизаторами</div>
+          </button>
+          <button class="card kind" data-v="military">
+            <svg viewBox="0 0 200 70" class="sil"><path class="sil-hull" d="M10 46h158l26-10-11 16c-3 5-9 8-15 8H34c-9 0-16-5-20-10Z"/><path class="sil-dark" d="M62 46V26h62l22 20Z M68 26V14h40v12Z M76 14V2 M70 6h14"/><path class="sil-dark" d="M96 10h14v4H96Z M108 11h28v2h-28Z"/><path class="sil-win" d="M120 30l14 14h-16V30Z"/><path class="sil-dark" d="M4 34h10v20H8Z"/></svg>
+            <div class="ctitle" data-t="k_military">Военный катер</div>
+            <div class="cdesc" data-t="k_military_d">Патрульный катер с управляемой пушкой</div>
+          </button>
+        </div>
+      </div>
+
+      <div class="row2">
+        <div class="group">
+          <div class="glabel"><span class="gnum">2</span><span data-t="m_size">Размер</span></div>
+          <div class="seg wide" id="sizeSeg">
+            <button data-v="S"><b data-t="sz_S">Малый</b><small class="dim"></small></button>
+            <button data-v="M"><b data-t="sz_M">Средний</b><small class="dim"></small></button>
+            <button data-v="L"><b data-t="sz_L">Большой</b><small class="dim"></small></button>
+          </div>
+        </div>
+        <div class="group">
+          <div class="glabel"><span class="gnum">3</span><span data-t="m_detail">Детализация</span></div>
+          <div class="seg wide" id="detailSeg">
+            <button data-v="low"><b data-t="d_low">Низкая</b><small>200–250 <span data-t="bricks_short">бр.</span></small></button>
+            <button data-v="med"><b data-t="d_med">Средняя</b><small>500–600 <span data-t="bricks_short">бр.</span></small></button>
+            <button data-v="high"><b data-t="d_high">Высокая</b><small>900–1100 <span data-t="bricks_short">бр.</span></small></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="glabel"><span class="gnum">4</span><span data-t="m_color">Цвет</span></div>
+        <div class="cards three" id="colorCards">
+          <button class="card swatch" data-v="dark"><span class="sw sw-dark"><i></i><i></i><i></i></span><div class="ctitle" data-t="c_dark">Тёмный</div></button>
+          <button class="card swatch" data-v="greyblue"><span class="sw sw-greyblue"><i></i><i></i><i></i></span><div class="ctitle" data-t="c_greyblue">Серо-синий</div></button>
+          <button class="card swatch" data-v="light"><span class="sw sw-light"><i></i><i></i><i></i></span><div class="ctitle" data-t="c_light">Светлый</div></button>
+        </div>
+      </div>
+    </div>
+    <div class="bar">
+      <div class="summary" id="summary"></div>
+      <button class="btn primary" id="okMenu"><span data-t="ok_create">Создать</span><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+    </div>
+  </section>
+
+  <!-- 3. preview -->
+  <section class="screen" id="s-preview">
+    <div class="warn">
+      <svg viewBox="0 0 24 24"><path d="M12 3 2 20h20Z"/><path d="M12 10v4M12 17h.01"/></svg>
+      <span data-t="p_warn">Если что-то сгенерировалось или работает неправильно и вы не можете исправить это сами — просто сгенерируйте лодку заново.</span>
+    </div>
+    <div class="pv">
+      <div class="stage" id="stage">
+        <canvas id="gl"></canvas>
+        <div class="stage-name" id="boatName">—</div>
+        <div class="stage-hint" data-t="p_hint">Тяните мышью — вращать · колесо — масштаб · двойной клик — сброс</div>
+        <div class="loader" id="loader"><div class="ring"></div><span data-t="p_loading">Собираю лодку…</span></div>
+      </div>
+      <aside class="side">
+        <div class="stats" id="stats"></div>
+        <div class="ctl">
+          <div class="ctl-h" data-t="p_controls">Управление в игре</div>
+          <ul id="controls"></ul>
+        </div>
+      </aside>
+    </div>
+    <div class="bar">
+      <button class="btn ghost" id="backBtn"><svg viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></svg><span data-t="b_back">Назад</span></button>
+      <button class="btn ghost" id="rerollBtn"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg><span data-t="b_reroll">Другой вариант</span></button>
+      <div class="spacer"></div>
+      <button class="btn primary" id="okPreview"><span data-t="b_ok">ОК, сохранить</span><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>
+    </div>
+  </section>
+
+  <!-- 4. done -->
+  <section class="screen" id="s-done">
+    <div class="done">
+      <div class="check"><svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="29"/><path d="M19 33l9 9 17-19"/></svg></div>
+      <h2 data-t="d_title">Готово!</h2>
+      <p class="lead" data-t="d_sub">Постройка сохранена в папку:</p>
+      <div class="pathbox">
+        <svg viewBox="0 0 24 24" class="ficon"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+        <code id="savedPath">—</code>
+        <div class="more" tabindex="0">
+          <span>⋯</span>
+          <div class="tip">
+            <div class="tip-h" data-t="t_h">Куда положить папку</div>
+            <p data-t="t_1">Скопируйте папку с лодкой целиком в папку транспорта Brick Rigs:</p>
+            <code id="gameDir">%LOCALAPPDATA%\BrickRigs\SavedRemastered\Vehicles</code>
+            <p data-t="t_2">Быстро открыть: Win + R → введите %LOCALAPPDATA%\BrickRigs → SavedRemastered → Vehicles. Или в игре: «Открыть папку» у любой постройки.</p>
+            <p data-t="t_3">После этого лодка появится в списке построек (иногда нужно перезапустить игру).</p>
+          </div>
+        </div>
+      </div>
+      <div class="done-actions">
+        <button class="btn ghost" id="openBtn"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg><span data-t="b_open">Открыть папку</span></button>
+        <button class="btn ghost" id="copyBtn"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg><span data-t="b_copy">Скопировать в Brick Rigs</span></button>
+      </div>
+      <button class="btn primary big" id="homeBtn"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 10v9h12v-9"/></svg><span data-t="b_home">В главное меню</span></button>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+<script src="viewer.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

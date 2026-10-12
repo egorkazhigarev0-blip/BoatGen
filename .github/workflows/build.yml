@@ -1,0 +1,25 @@
+name: Build BoatGen.exe
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -r source/requirements.txt pyinstaller
+      - name: Test generator
+        run: python -c "import sys; sys.path.insert(0,'source'); from engine.gen import generate; [print(k, generate(k,'M','med','dark',1).info['bricks']) for k in ('motor','cutter','military')]"
+      - name: Build exe
+        run: pyinstaller --noconfirm --windowed --name BoatGen --icon source/assets/boatgen.ico --add-data "source/ui;ui" --add-data "source/engine/data;engine/data" source/app.py
+      - name: Add readme
+        shell: pwsh
+        run: Copy-Item README_RU.txt dist/BoatGen/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BoatGen
+          path: dist/BoatGen
