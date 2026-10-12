@@ -85,8 +85,7 @@ def controls(kind, lang):
         keys.append("door_aft")
     if kind == "military":
         keys += ["door_side", "gun"]
-    if kind in ("cutter", "military"):
-        keys.append("stab")
+    keys.append("stab")
     keys.append("lights")
     return [t[k] for k in keys]
 
