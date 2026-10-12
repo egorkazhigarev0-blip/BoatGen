@@ -17,7 +17,7 @@ jobs:
       - name: Test generator
         run: python -c "import sys; sys.path.insert(0,'source'); from engine.gen import generate; [print(k, generate(k,'M','med','dark',1).info['bricks']) for k in ('motor','cutter','military')]"
       - name: Build exe
-        run: pyinstaller --noconfirm --windowed --collect-all webview --collect-all clr_loader --collect-all pythonnet --hidden-import clr --name BoatGen --icon source/assets/boatgen.ico --add-data "source/ui;ui" --add-data "source/engine/data;engine/data" source/app.py
+        run: pyinstaller --noconfirm --windowed --name BoatGen --icon source/assets/boatgen.ico --add-data "source/ui;ui" --add-data "source/engine/data;engine/data" source/app.py
       - name: Self-test exe
         shell: pwsh
         run: |
@@ -25,6 +25,17 @@ jobs:
           if (Test-Path dist/BoatGen/error.log) { Get-Content dist/BoatGen/error.log }
           if (-not (Test-Path dist/BoatGen/selftest.ok)) { exit 1 }
           Remove-Item dist/BoatGen/selftest.ok
+      - name: Window test (real Qt window)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $p = Start-Process dist/BoatGen/BoatGen.exe -ArgumentList "--guitest" -PassThru
+          $p | Wait-Process -Timeout 120 -ErrorAction SilentlyContinue
+          if (Test-Path dist/BoatGen/guitest.txt) { "GUITEST: " + (Get-Content dist/BoatGen/guitest.txt) } else { "GUITEST: no result" }
+          if (Test-Path dist/BoatGen/error.log) { Get-Content dist/BoatGen/error.log }
+          Remove-Item dist/BoatGen/guitest.txt, dist/BoatGen/error.log, dist/BoatGen/settings.json -ErrorAction SilentlyContinue
+      - name: Generate test boats
+        run: python -c "import sys; sys.path.insert(0,'source'); from engine.gen import generate; [print(k, s, d, generate(k,s,d,'dark',7).info['bricks']) for k in ('motor','cutter','military') for s in 'SML' for d in ('low','med','high')]"
       - name: Add readme
         shell: pwsh
         run: Copy-Item README_RU.txt dist/BoatGen/

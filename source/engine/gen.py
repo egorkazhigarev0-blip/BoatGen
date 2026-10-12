@@ -35,7 +35,7 @@ DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 KINDS = {
     #            hull length (cm) S / M / L     L/B    depth/L  deadrise
     "motor":    dict(L=(420, 500, 600), B=(170, 205, 240), ratio=2.55, depth=0.160, dr0=16, outboards=1),
-    "cutter":   dict(L=(650, 800, 950), B=(255, 280, 315), ratio=2.95, depth=0.150, dr0=18, outboards=2),
+    "cutter":   dict(L=(650, 800, 950), B=(265, 285, 315), ratio=2.95, depth=0.150, dr0=18, outboards=2),
     "military": dict(L=(900, 1100, 1300), B=(320, 345, 390), ratio=3.25, depth=0.142, dr0=20, outboards=2),
 }
 DETAIL = {"low": (200, 250), "med": (500, 600), "high": (900, 1100)}
@@ -142,17 +142,27 @@ class Lines:
 class Builder:
     def __init__(self, kind, size, detail, color, seed, res):
         self.kind, self.size, self.detail, self.color, self.seed = kind, size, detail, color, seed
-        self.rng = random.Random(seed * 7919 + {"motor": 1, "cutter": 2, "military": 3}[kind])
+        self.rng = random.Random("%s-%d" % (kind, seed))
         rng = self.rng
         spec = KINDS[kind]
         L = spec["L"]["SML".index(size)] * rng.uniform(0.96, 1.04)
         B = spec["B"]["SML".index(size)] * rng.uniform(0.97, 1.03)
         D = L * spec["depth"] * rng.uniform(0.97, 1.05)
         if kind == "motor":
-            D = max(D, 70.0)
+            D = max(D, 74.0)
         self.L, self.B, self.D = L, B, D
         self.ln = Lines(L, B / 2, D, spec["dr0"] + rng.uniform(-2, 2), rng)
         self.P = {k: rgba(v) for k, v in PALETTES[color].items()}
+        self.sty = make_style(kind, size, color, seed)
+        sty, P = self.sty, self.P
+        if sty["stripe"]:
+            P["band"] = rgba(sty["stripe"])
+        if sty["bottom_red"]:
+            P["bottom"] = rgba((112, 40, 36))
+        t = sty["cab_tint"]
+        for k in ("cabin", "cabin_d"):
+            P[k] = tuple(max(0, min(255, int(c + t))) for c in P[k][:3]) + (255,)
+        P["roof"] = rgba((222, 224, 226)) if sty["two_tone"] else P["cabin_d"]
         self.res = RES[res]
         self.eq = EQUIP[detail]
         self.hm = "Aluminium" if kind == "military" else "Plastic"     # GRP hulls for civil boats
@@ -180,7 +190,7 @@ class Builder:
                 for j in range(i, nsec):
                     chunk_of[j] = w
                 break
-            n = rng.choice((1, 2, 2, 3))
+            n = rng.choice((1, 1, 2)) if self.eq else rng.choice((1, 2, 2))
             w = K.new_weld()
             for j in range(i, min(nsec, i + n)):
                 chunk_of[j] = w
@@ -207,7 +217,7 @@ class Builder:
         strake_col = strake_col[:NB + NS]
         collar = self.kind == "military"
         open_boat = self.kind == "motor"
-        floor_z = ln.D * 0.42 if open_boat else None
+        floor_z = ln.D * 0.46 if open_boat else None
         self.floor_z = floor_z
         x_fd = ln.X0 + 0.70 * ln.L if open_boat else None
         self.x_fd = x_fd
@@ -248,10 +258,13 @@ class Builder:
                             return (x, s * (c * t + 1.5), k + (zc - k) * t - 1.0)
                         K.rod(lp(xa), lp(xb), 4, P["bottom"], self.hm, extend=1)
             K.weld = chunk_of[i]
+            if i > 0 and chunk_of[i - 1] != chunk_of[i] and random.Random(self.seed * 37 + i).random() < 0.5:
+                K.weld = chunk_of[i - 1]          # keel tongue: the previous chunk reaches into this one
             if xb <= ln.X1 - 0.008 * ln.L:                                  # keel bar
                 a, b = (xa, 0.0, ln.keel_z(xa)), (xb, 0.0, ln.keel_z(xb))
                 K.obox(sub(mid(a, b), (0, 0, 3)), sub(b, a), (0, 0, 1), (norm(sub(b, a)) + 2, 10, 8),
                        P["bottom"], self.hm)
+            K.weld = chunk_of[i]
             # deck
             if xa < ln.X1 - 0.008 * ln.L:
                 wa, wb = ln.sheer_hw(xa) - 1, ln.sheer_hw(xb) - 1
@@ -324,7 +337,7 @@ class Builder:
         K.hidden = True
         top = None
         if self.kind == "motor" and xb <= self.x_fd + 1:
-            top = self.floor_z - 2
+            top = self.floor_z - 7
         sl = self._slices(xa, xb, top)
         if not sl or sl[-1][1] - sl[0][0] < 8:
             K.hidden = False
@@ -358,7 +371,7 @@ class Builder:
             return
         K, ln, P = self.K, self.ln, self.P
         fz, st = self.floor_z, self.st
-        w = 0.26 * ln.hw
+        w = 0.30 * ln.hw
         for i in range(len(st) - 1):
             xa, xb = st[i], st[i + 1]
             if xa < ln.X0 + 0.11 * ln.L - 1 or xb > self.x_fd + 1:
@@ -415,9 +428,10 @@ class Builder:
         """Reserve float cells for the stabiliser thrusters before the hull is built."""
         self.reserved = set()
         self.stab = None
-        if self.kind == "motor":
-            return
         ln = self.ln
+        if self.kind == "motor":
+            self.floor_z = ln.D * 0.46
+            self.x_fd = ln.X0 + 0.70 * ln.L
         st = self.stations()
         last_float = ln.X1 - 0.06 * ln.L
         cand = [i for i in range(len(st) - 1) if st[i + 1] <= last_float + 1 and st[i + 1] - st[i] > 40]
@@ -431,7 +445,10 @@ class Builder:
             if im != ifw:
                 self.stab = (im, ifw)
                 for i in (im, ifw):
-                    sl = self._slices(st[i], st[i + 1])
+                    top = None
+                    if self.kind == "motor" and st[i + 1] <= self.x_fd + 1:
+                        top = self.floor_z - 7
+                    sl = self._slices(st[i], st[i + 1], top)
                     self.reserved.add((i, len(sl) - 1))
 
     def stabilisers(self):
@@ -440,7 +457,8 @@ class Builder:
         K, ln = self.K, self.ln
         im, ifw = self.stab
         cells = {c[0]: c for c in self.float_cells}
-        sc = round(6.0 * max(0.5, self.scale) ** 2, 2)
+        sc = 6.0                              # re-scaled by mass and size in tune()
+        self.stab_thr = []
         roll_sw = pitch_sw = None
         for which, i in (("roll", im), ("pitch", ifw)):
             if i not in cells:
@@ -479,9 +497,10 @@ class Builder:
                 for s in (1, -1):
                     c = ((x0 + x1) / 2, s * (hw - cell / 2), (z0 + z1) / 2)
                     for up, k in (((0, 0, 1), s), ((0, 0, -1), -s)):
-                        K.obox(c, (1, 0, 0), up, (15, cell, 20), (40, 40, 42, 255), "Plastic", "ThrusterBrick",
-                               extra={"InputChannel.InputAxis": "Custom",
-                                      "InputChannel.SourceBricks": [src(roll_sw)], "InputScale": k * sc})
+                        t = K.obox(c, (1, 0, 0), up, (15, cell, 20), (40, 40, 42, 255), "Plastic", "ThrusterBrick",
+                                   extra={"InputChannel.InputAxis": "Custom",
+                                          "InputChannel.SourceBricks": [src(roll_sw)], "InputScale": k * sc})
+                        self.stab_thr.append((t, "roll", k))
             else:
                 for s in (1, -1):
                     y0, y1 = sorted((s * cell / 2, s * hw))
@@ -489,20 +508,25 @@ class Builder:
                         K.box(x0, x1, y0, y1, z0, z1, HIDDEN, "Float", "Float", connectors=4095)
                 c = ((x0 + x1) / 2, 0.0, (z0 + z1) / 2)
                 for up, k in (((0, 0, 1), 1), ((0, 0, -1), -1)):
-                    K.obox(c, (1, 0, 0), up, (15, 15, 15), (40, 40, 42, 255), "Plastic", "ThrusterBrick",
-                           extra={"InputChannel.InputAxis": "Custom",
-                                  "InputChannel.SourceBricks": [src(pitch_sw)] if pitch_sw is not None else [],
-                                  "InputScale": k * sc})
+                    t = K.obox(c, (1, 0, 0), up, (15, 15, 15), (40, 40, 42, 255), "Plastic", "ThrusterBrick",
+                               extra={"InputChannel.InputAxis": "Custom",
+                                      "InputChannel.SourceBricks": [src(pitch_sw)] if pitch_sw is not None else [],
+                                      "InputScale": k * sc})
+                    self.stab_thr.append((t, "pitch", k))
             K.hidden = False
 
     # ------------------------------------------------------------------ outboards
     def outboards(self):
         K, ln, P = self.K, self.ln, self.P
-        n = KINDS[self.kind]["outboards"]
+        n = self.sty.get("outboards") or KINDS[self.kind]["outboards"]
+        if self.eq == 0:
+            n = min(n, 2)
         k = max(0.55, min(1.15, self.scale))
-        ys = [0.0] if n == 1 else [0.45 * ln.hw, -0.45 * ln.hw]
-        fwd = round(min(25.0, max(3.0, 10.0 * (self.scale ** 2.2) * 2 / n)), 1)
-        rev = -round(fwd / 2, 1)
+        ys = {1: [0.0], 2: [0.45 * ln.hw, -0.45 * ln.hw], 3: [0.55 * ln.hw, 0.0, -0.55 * ln.hw]}[n]
+        if n == 3:
+            k = min(k, 0.9)
+        fwd, rev = 10.0, -5.0                 # re-scaled by mass in tune()
+        self.main_thr = []
         X0, zb = ln.X0, ln.D - 8
         eng = rgba(P["engine"])
         for yc in ys:
@@ -530,10 +554,11 @@ class Builder:
                 K.box(cx0 + 2 * k, cx1 - 6 * k, yc - 26.5 * k, yc + 26.5 * k, cz0 + 32 * k, cz0 + 36 * k,
                       (150, 28, 28, 255), "Plastic", connectors=0)
             # thrusters (welded with the outboard so they turn with it)
-            K.obox((cx0 - 15 * k, yc, cz0 + 34 * k), (0, 0, -1), (1, 0, 0), (24 * k, 24 * k, 30 * k),
-                   (44, 44, 46, 255), "Plastic", "ThrusterBrick", extra={"InputScale": fwd}, connectors=0)
-            K.obox((cx1 + 15 * k, yc, cz0 + 30 * k), (0, 0, 1), (-1, 0, 0), (16 * k, 16 * k, 30 * k),
-                   (44, 44, 46, 255), "Plastic", "ThrusterBrick", extra={"InputScale": rev}, connectors=0)
+            t1 = K.obox((cx0 - 15 * k, yc, cz0 + 34 * k), (0, 0, -1), (1, 0, 0), (24 * k, 24 * k, 30 * k),
+                        (44, 44, 46, 255), "Plastic", "ThrusterBrick", extra={"InputScale": fwd}, connectors=0)
+            t2 = K.obox((cx1 + 15 * k, yc, cz0 + 30 * k), (0, 0, 1), (-1, 0, 0), (16 * k, 16 * k, 30 * k),
+                        (44, 44, 46, 255), "Plastic", "ThrusterBrick", extra={"InputScale": rev}, connectors=0)
+            self.main_thr += [(t1, 1.0), (t2, -0.5)]
             # leg, plate, gearcase, skeg, propeller
             zg = max(10.0, 0.19 * ln.D)
             lx0, lx1 = cx0 + 8 * k, cx0 + 34 * k
@@ -556,7 +581,7 @@ class Builder:
             if self.eq >= 1:
                 K.obox((hub0 - 5 * k, yc, zg), (0, 0, -1), (-1, 0, 0), (8 * k, 8 * k, 10 * k), PROP, "Copper",
                        "ScalableConeFlat", connectors=0)
-        self.thrust = (fwd, rev)
+        self.n_out = n
 
     # ------------------------------------------------------------------ cabin
     def cabin(self):
@@ -564,17 +589,19 @@ class Builder:
         if self.kind == "motor":
             return self.console()
         mil = self.kind == "military"
-        if mil:
-            cx0, cx1 = ln.X0 + 0.42 * ln.L, ln.X0 + 0.715 * ln.L
-            cy = 0.656 * ln.hw
-        else:
-            cx0, cx1 = ln.X0 + 0.40 * ln.L, ln.X0 + 0.64 * ln.L
-            cy = 0.62 * ln.hw
+        sty = self.sty
+        mid, length = (0.5675, 0.295) if mil else (0.52, 0.24)
+        length = max(260.0 if mil else 210.0, length * ln.L * sty["cab_len"])
+        cmid = ln.X0 + (mid + sty["cab_shift"]) * ln.L
+        cx0, cx1 = cmid - length / 2, cmid + length / 2
+        cx1 = min(cx1, ln.X0 + 0.74 * ln.L)
+        cx0 = max(min(cx0, cx1 - length), ln.X0 + 0.30 * ln.L)
+        cy = sty["cab_w"] * ln.hw
         cyt = cy - 8
         D = ln.D
         floor = D + 5
-        zs, zr = floor + 70, floor + 130
-        wx = cx1 - 45
+        zs, zr = floor + sty["zs"], floor + sty["zr"]
+        wx = cx1 - sty["rake"]
         self.cab = dict(cx0=cx0, cx1=cx1, cy=cy, floor=floor, zr=zr, wx=wx)
         cab_w = K.new_weld()
         self.cab_w = cab_w
@@ -587,7 +614,7 @@ class Builder:
                 K.box(x - 3, x + 3, -cy + 2, cy - 2, D, floor - 2, fr, "Aluminium")
         else:
             K.box(cx0 + 10, cx1 - 10, -cy + 10, cy - 10, D, floor - 2, fr, "Plastic")
-        n_win = max(1, int((wx - 8 - (dx1 + 11 if side_doors else cx0 + 12)) / 85)) if self.eq else 1
+        n_win = max(1, int((wx - 8 - (dx1 + 11 if side_doors else cx0 + 12)) / self.sty["win_w"])) if self.eq else 1
         for s in (1, -1):
             y0, y1 = sorted((s * (cy - 2), s * cy))
             if side_doors:
@@ -640,7 +667,7 @@ class Builder:
             if self.eq >= 2:
                 K.rod((cx1 - 6, s * 0.5 * cy, zs + 6), (cx1 - 26, s * 0.3 * cy, zs + 33), 1.6, fr, "Steel")
         K.plate((cx1, -3, zs), (cx1, 3, zs), (wx, -3, zr), (wx, 3, zr), (1, 0, 0.8), 3.0, fr, "Aluminium", overlap=1.0)
-        K.box(cx0 - 2, wx + 4, -cyt + 4, cyt - 4, zr, zr + 3, cabd, "Aluminium")
+        K.box(cx0 - 2, wx + 4, -cyt + 4, cyt - 4, zr, zr + 3, P["roof"], "Aluminium")
         for s in (1, -1):
             y0, y1 = sorted((s * (cyt - 4), s * (cyt + 4)))
             K.ramp(cx0 - 2, wx + 4, y0, y1, zr, zr + 6, back=(0, -s, 0), bottom=(0, 0, -1), color=cabd,
@@ -673,15 +700,39 @@ class Builder:
         if cx1 - cx0 > 280 and self.eq >= 1:
             seats += [(helm_x - 85, 0.47 * cy), (helm_x - 85, -0.47 * cy)]
         self.seats = []
-        for x, y in seats:
-            self.seats.append(K.fixed("Seat_2x2x7s", (x, y, floor - 1), color=(38, 38, 40, 255), material="Rubber"))
+        ped_h = 16.0 if (self.eq >= 1 and sty["pedestal"]) else 0.0
+        for n, (x, y) in enumerate(seats):
+            h = ped_h if n < 2 else 0.0
+            if h:                                    # helm chairs on a post with a round base
+                K.rod((x, y, floor), (x, y, floor + 2), 34, fr, "Steel")
+                K.rod((x, y, floor + 2), (x, y, floor + h), 9, CHROME)
+            self.seats.append(K.fixed("Seat_2x2x7s", (x, y, floor + h - 1), color=(38, 38, 40, 255),
+                                      material="Rubber"))
         if self.eq >= 1:
-            for y in (0.28 * cy, 0.66 * cy, -0.28 * cy, -0.66 * cy):
-                K.obox((dash_x - 0.5, y, floor + 35), (0, 1, 0), (-1, 0, 0), (14, 14, 1.0), (24, 24, 24, 255),
+            wy = 0.47 * cy
+            # console face with screens and gauges, wheel on a column, throttle, compass, footrest
+            K.ramp(dash_x - 14, dash_x, -cy + 3, cy - 3, floor + 46, floor + 60, back=(1, 0, 0), bottom=(0, 0, -1),
+                   color=cabd, material="Plastic")
+            for j in range(sty["screens"]):
+                yy = -0.2 * cy - j * 0.22 * cy
+                K.obox((dash_x - 7.5, yy, floor + 53.5), (0, -1, 0), unit((-1, 0, 1)), (0.18 * cy, 11, 1.0),
+                       (8, 10, 12, 255), "Plastic", "TextBrick",
+                       extra={"Text": ("GPS", "SONAR", "RADAR")[j], "TextColor": (60, 200, 230, 255)})
+            for y in (0.28 * cy, 0.66 * cy):
+                K.obox((dash_x - 0.5, y, floor + 30), (0, 1, 0), (-1, 0, 0), (12, 12, 1.0), (24, 24, 24, 255),
                        "Plastic", "ImageCylinder", extra={"Image": "Gauge"})
-            K.rod((dash_x, 0.47 * cy, floor + 25), (dash_x - 10, 0.47 * cy, floor + 31), 5, fr, "Steel")
-            K.obox((dash_x - 12, 0.47 * cy, floor + 32), (0, 1, 0), unit((-1, 0, 0.6)), (40, 40, 3), (28, 28, 28, 255),
+            K.rod((dash_x, wy, floor + 25), (dash_x - 14, wy, floor + 34), 5, fr, "Steel")
+            K.obox((dash_x - 16, wy, floor + 35), (0, 1, 0), unit((-1, 0, 0.6)), (40, 40, 3), (28, 28, 28, 255),
                    "Rubber", "ScalableZylinder", vf=0.785)
+            K.obox((dash_x - 16, wy, floor + 35), (0, 1, 0), unit((-1, 0, 0.6)), (8, 8, 6), CHROME, "Chrome",
+                   "ScalableZylinder", vf=0.785)
+            K.box(dash_x - 12, dash_x, wy - 30, wy - 18, floor + 40, floor + 46, (30, 30, 32, 255), "Plastic")
+            K.rod((dash_x - 6, wy - 24, floor + 46), (dash_x - 14, wy - 24, floor + 60), 2.2, CHROME)
+            K.box(dash_x - 18, dash_x - 12, wy - 27, wy - 21, floor + 59, floor + 64, (180, 30, 30, 255), "Plastic")
+            K.box(dash_x - 12, dash_x - 2, 0.05 * cy - 6, 0.05 * cy + 6, floor + 60, floor + 62, cabd, "Plastic")
+            K.box(dash_x - 12, dash_x - 2, 0.05 * cy - 6, 0.05 * cy + 6, floor + 62, floor + 70, (20, 20, 22, 255),
+                  "Plastic", typ="ScalableHemisphere")
+            K.rod((dash_x - 20, wy - 15, floor + 8), (dash_x - 20, wy + 15, floor + 8), 2.5, CHROME)
         if self.eq >= 2:
             K.obox((dash_x - 0.5, -0.47 * cy, floor + 15), (0, -1, 0), (-1, 0, 0), (36, 18, 1.0), (10, 14, 12, 255),
                    "Plastic", "TextBrick", extra={"Text": "RADAR 6nm", "TextColor": (60, 220, 90, 255)})
@@ -693,7 +744,7 @@ class Builder:
         if mil:
             self.tower_and_turret()
         dome_x = wx - 0.25 * (wx - cx0)
-        if self.eq >= 1:
+        if self.eq >= 1 and sty["dome"]:
             K.rod((dome_x, 0, rt), (dome_x, 0, rt + 8), 34, cabd, "Aluminium")
             K.rod((dome_x, 0, rt + 8), (dome_x, 0, rt + 22), 60, WHITE, "Plastic")
             K.box(dome_x - 30, dome_x + 30, -30, 30, rt + 22, rt + 42, WHITE, "Plastic", typ="ScalableHemisphere")
@@ -704,7 +755,7 @@ class Builder:
             y0, y1 = sorted((s * cy, s * (cy + 4)))
             K.box(cx1 - 18, cx1 - 6, y0, y1, zs - 19, zs - 9, (20, 200, 70, 255) if s > 0 else (210, 25, 25, 255),
                   "Glow", "LightBrick", extra={"Brightness": 0.5, "InputChannel.InputAxis": "Headlight"})
-            if self.eq >= 1:
+            if self.eq >= 1 and sty["horns"]:
                 K.obox((wx - 23, s * 42, rt + 6), (0, 0, -1), (1, 0, 0), (8, 8, 22), CHROME, "Chrome", "ScalableConeFlat")
                 K.box(wx - 40, wx - 33, s * 42 - 3, s * 42 + 3, rt, rt + 10, CHROME, "Chrome")
             if self.eq >= 2:
@@ -716,9 +767,18 @@ class Builder:
                "LightConeFlat", extra={"Brightness": 1.0, "LightDirection": "Z", "LightConeAngle": 18.0,
                                        "InputChannel.InputAxis": "Headlight"})
         if not mil:
-            K.rod((cx0 + 20, 0, rt), (cx0 + 20, 0, rt + 90), 4, P["frame"], "Aluminium")
-            K.box(cx0 + 16, cx0 + 24, -4, 4, rt + 90, rt + 96, (240, 240, 230, 255), "Glow", "LightBrick",
+            mx = cx0 + 20 if sty["mast_aft"] else (cx0 + wx) / 2
+            mh = sty["mast_h"]
+            K.rod((mx, 0, rt), (mx, 0, rt + mh), 4, P["frame"], "Aluminium")
+            K.box(mx - 4, mx + 4, -4, 4, rt + mh, rt + mh + 6, (240, 240, 230, 255), "Glow", "LightBrick",
                   extra={"Brightness": 0.6, "InputChannel.InputAxis": "Headlight"})
+            if self.eq >= 1 and sty["yard"]:
+                K.box(mx - 3, mx + 3, -30, 30, rt + mh * 0.7, rt + mh * 0.7 + 4, P["frame"], "Aluminium")
+        if self.eq >= 1:
+            for j in range(sty["antennas"]):
+                ax = cx0 + 10 + 14 * j
+                ay = (cyt - 14) * (1 if j % 2 else -1)
+                K.rod((ax, ay, rt), (ax, ay, rt + 80 + 25 * j), 2.0, (30, 30, 32, 255), "Rubber")
 
     def doors(self, side_doors, dx0, dx1):
         K, P, c = self.K, self.P, self.cab
@@ -762,8 +822,9 @@ class Builder:
         K, P, c = self.K, self.P, self.cab
         cx0, rt = c["cx0"], c["rt"]
         tx0, tx1, ty = cx0, cx0 + 100, 78.0 * min(1.0, c["cy"] / 105)
-        tz = rt + 50
+        tz = rt + self.sty["tower_h"]
         cabin, cabd, fr = P["cabin"], P["cabin_d"], P["frame"]
+        tw = K.new_weld()                     # the tower can be shot off the roof as one piece
         K.box(tx0, tx1 - 12, -ty, ty, tz - 4, tz, cabd, "Aluminium")
         for s in (1, -1):
             y0, y1 = sorted((s * (ty - 3), s * ty))
@@ -792,9 +853,27 @@ class Builder:
                 K.rod((tx0 + 10, s * (ty - 8), tz), (tx0 + 10, s * (ty - 8), tz + 170), 2.5, fr, "Rubber")
                 y0, y1 = sorted((s * 30, s * 52))
                 K.box(tx0 + 32, tx0 + 60, y0, y1, tz, tz + 18, (58, 62, 52, 255), "Steel")
-        # weapon station from the user's PU1, aimed and fired from the gunner seat
-        ped = (tx0 + 28, tx0 + 90, -22.0, 22.0, tz, tz + 24.0)
-        K.box(*ped, STEEL, "Aluminium")
+        if self.sty["gun_bow"]:
+            # gun on the foredeck, in front of the wheelhouse (pedestal welded to the deck section)
+            ln = self.ln
+            xg = min(ln.X0 + 0.78 * ln.L, c["cx1"] + 115)
+            zd = ln.sheer_z(xg + 31)
+            K.weld = self.chunk_of[self.sec_of(xg + 31)]
+            ped = (xg, xg + 62, -22.0, 22.0, zd, zd + 58.0)
+            K.box(*ped, STEEL, "Aluminium")
+            if self.eq >= 1:
+                K.box(xg - 8, xg + 70, -30, 30, zd, zd + 6, STEEL, "Steel")
+            self.station(ped, K.weld, 115.0, -4.0)
+        else:
+            ped = (tx0 + 28, tx0 + 90, -22.0, 22.0, tz, tz + 24.0)
+            K.box(*ped, STEEL, "Aluminium")
+            self.station(ped, tw, 160.0, -10.0)
+        K.weld = self.cab_w
+
+    def station(self, ped, base_weld, yaw, pitch_min):
+        """Weapon station from the user's PU1, aimed and fired from the gunner seat."""
+        K = self.K
+        tz = ped[4]
         gunner = self.seats[1]
         tb = load_station()
         drop = {1, 5, 6, 7, 8, 9, 10, 11, 14, 15, 16, 19}
@@ -804,14 +883,14 @@ class Builder:
         remap = {old: base + n for n, old in enumerate(keep)}
         plate_bottom = tb[0].pos[2] - tb[0].get("BrickSize")[2] / 2
         ox, oz = ped[0] + 32 - 0.6, ped[5] - plate_bottom
-        welds = {0: 0, 2: self.cab_w}
+        welds = {0: 0, 2: base_weld}
         for g in (1, 4):
             welds[g] = K.new_weld()
         K.weld = self.cab_w
         for old in keep:
             b = copy.deepcopy(tb[old])
             if old in logic:
-                b.pos = (ped[0] - 1.5, {22: -8.0, 23: 0.0, 24: 8.0}[old], tz + 12)
+                b.pos = (ped[0] - 1.5, {22: -8.0, 23: 0.0, 24: 8.0}[old], ped[5] - 12)
             else:
                 b.pos = (b.pos[0] + ox, b.pos[1], b.pos[2] + oz)
             for key in ("InputChannel.SourceBricks", "EnabledInputChannel.SourceBricks"):
@@ -822,11 +901,11 @@ class Builder:
             if b.get("BrickMaterial") != "CloudyGlass":
                 b.set("BrickColor", (60, 64, 68, 255) if b.type != "Gun_2A28" else (46, 48, 51, 255))
             if b.type == "Actuator_1sx1sx1s_Bottom":
-                b.set("MinLimit", -160.0)
-                b.set("MaxLimit", 160.0)
+                b.set("MinLimit", -yaw)
+                b.set("MaxLimit", yaw)
                 b.set("InputChannel.SourceBricks", [src(gunner)])
             if b.type == "Actuator_1x1x1_Bottom":
-                b.set("MinLimit", -10.0)
+                b.set("MinLimit", pitch_min)
                 b.set("MaxLimit", 45.0)
                 b.set("InputChannel.SourceBricks", [src(gunner)])
             if b.type == "SwitchBrick" and b.get("InputChannel.InputAxis") == "Action1":
@@ -842,29 +921,78 @@ class Builder:
         K.weld = self.cab_w
 
     def console(self):
-        """Open motor boat: centre console with screen, wheel, throttle; seat behind it."""
+        """Open motor boat: centre or side console with windscreen, wheel, throttle and screens;
+        leaning post / helm seat behind it, bench seat aft, cushions on the foredeck."""
         K, ln, P = self.K, self.ln, self.P
         fz = self.floor_z
-        x0 = ln.X0 + 0.48 * ln.L
+        sty = self.sty
+        x0 = ln.X0 + sty["console_x"] * ln.L
+        side = sty["console_side"]
+        hw_c = ln.hull_hw(x0, fz + 30) - 0.30 * ln.hw - 6          # inner edge of the side lockers
+        cw = 30.0 if not side else 26.0
+        yc = 0.0 if not side else max(0.0, hw_c - cw - 2)
         w = K.new_weld()
         self.cab_w = w
-        K.box(x0, x0 + 55, -32, 32, fz, fz + 85, P["cabin"], "Float", "Float")
-        K.ramp(x0, x0 + 30, -32, 32, fz + 85, fz + 110, back=(-1, 0, 0), bottom=(0, 0, -1), color=GLASS,
-               material="Glass")
-        K.box(x0 + 30, x0 + 55, -32, 32, fz + 85, fz + 88, P["cabin_d"], "Plastic")
-        K.rod((x0 - 1, 12, fz + 70), (x0 - 10, 12, fz + 76), 4, P["frame"], "Steel")
-        K.obox((x0 - 12, 12, fz + 77), (0, 1, 0), unit((-1, 0, 0.6)), (34, 34, 3), (28, 28, 28, 255), "Rubber",
+        if self.eq >= 1 and sty["ttop"] and not side:
+            # T-top canopy over the helm on four posts
+            th = fz + 195
+            for px in (x0 - 85, x0 + 45):
+                for py in (-40, 40):
+                    K.rod((px, py, fz + 1), (px, py, th), 4, CHROME)
+            K.box(x0 - 100, x0 + 60, -55, 55, th, th + 4, P["roof"], "Plastic")
+            K.box(x0 - 20, x0 - 10, -5, 5, th + 4, th + 10, (240, 240, 230, 255), "Glow", "LightBrick",
+                  extra={"Brightness": 0.6, "InputChannel.InputAxis": "Headlight"})
+        # console body (buoyant inside), sloped instrument face, windscreen
+        K.box(x0, x0 + 55, yc - cw, yc + cw, fz, fz + 78, P["cabin"], "Float", "Float")
+        K.ramp(x0, x0 + 18, yc - cw, yc + cw, fz + 78, fz + 92, back=(1, 0, 0), bottom=(0, 0, -1), color=P["cabin_d"],
+               material="Plastic")
+        K.box(x0 + 18, x0 + 55, yc - cw, yc + cw, fz + 78, fz + 92, P["cabin"], "Plastic")
+        K.ramp(x0 + 22, x0 + 50, yc - cw - 2, yc + cw + 2, fz + 92, fz + 122, back=(-1, 0, 0), bottom=(0, 0, -1),
+               color=GLASS, material="Glass")
+        wy = yc
+        K.rod((x0 + 6, wy, fz + 78), (x0 - 6, wy, fz + 84), 4, P["frame"], "Steel")
+        K.obox((x0 - 8, wy, fz + 85), (0, 1, 0), unit((-1, 0, 0.6)), (34, 34, 3), (28, 28, 28, 255), "Rubber",
                "ScalableZylinder", vf=0.785)
         if self.eq >= 1:
-            K.obox((x0 - 0.5, -12, fz + 72), (0, 1, 0), (-1, 0, 0), (12, 12, 1.0), (24, 24, 24, 255), "Plastic",
-                   "ImageCylinder", extra={"Image": "Gauge"})
-            K.rod((x0 + 20, -24, fz + 85), (x0 + 26, -24, fz + 100), 2.5, CHROME)
-        self.seats = [K.fixed("Seat_2x2x7s", (x0 - 55, 0.0, fz - 1), color=(38, 38, 40, 255), material="Rubber")]
+            K.obox((x0 + 9, yc - 0.45 * cw, fz + 85.5), (0, -1, 0), unit((-1, 0, 1)), (0.7 * cw, 10, 1.0),
+                   (8, 10, 12, 255), "Plastic", "TextBrick", extra={"Text": "GPS", "TextColor": (60, 200, 230, 255)})
+            K.obox((x0 - 0.5, yc + 0.6 * cw, fz + 66), (0, 1, 0), (-1, 0, 0), (11, 11, 1.0), (24, 24, 24, 255),
+                   "Plastic", "ImageCylinder", extra={"Image": "Gauge"})
+            # throttle on the side of the console, grab rail around the top
+            K.box(x0 + 10, x0 + 30, yc + cw, yc + cw + 6, fz + 62, fz + 74, (30, 30, 32, 255), "Plastic")
+            K.rod((x0 + 20, yc + cw + 3, fz + 74), (x0 + 12, yc + cw + 3, fz + 88), 2.2, CHROME)
+            for yy in (yc - cw - 4, yc + cw + 4):
+                K.rod((x0 + 4, yy, fz + 60), (x0 + 4, yy, fz + 84), 2.5, CHROME)
+            K.rod((x0 + 4, yc - cw - 4, fz + 84), (x0 + 4, yc + cw + 4, fz + 84), 2.5, CHROME, extend=2)
+        # helm seat: leaning post with a backrest, or a pedestal chair
+        sx = x0 - 55
+        if self.eq >= 1 and not side:
+            K.box(sx - 32, sx + 8, yc - 34, yc + 34, fz, fz + 14, P["cabin_d"], "Plastic")
+            K.box(sx - 30, sx - 22, yc - 30, yc + 30, fz + 60, fz + 100, (40, 40, 42, 255), "Rubber")
+            K.rod((sx - 26, yc - 26, fz + 14), (sx - 26, yc - 26, fz + 62), 3, CHROME)
+            K.rod((sx - 26, yc + 26, fz + 14), (sx - 26, yc + 26, fz + 62), 3, CHROME)
+            seat_z = fz + 14
+        elif self.eq >= 1:
+            K.rod((sx, yc, fz), (sx, yc, fz + 2), 34, P["frame"], "Steel")
+            K.rod((sx, yc, fz + 2), (sx, yc, fz + 16), 9, CHROME)
+            seat_z = fz + 16
+        else:
+            seat_z = fz
+        self.seats = [K.fixed("Seat_2x2x7s", (sx, yc, seat_z - 1), color=(38, 38, 40, 255), material="Rubber")]
         if self.eq >= 1:
-            self.seats.append(K.fixed("Seat_2x2x7s", (ln.X0 + 0.22 * ln.L, 0.0, fz - 1), color=(38, 38, 40, 255),
-                                      material="Rubber"))
-        K.box(x0 + 20, x0 + 30, -5, 5, fz + 88, fz + 96, (240, 240, 230, 255), "Glow", "LightBrick",
+            self.seats.append(K.fixed("Seat_2x2x7s", (ln.X0 + 0.22 * ln.L, 0.0 if not side else -yc * 0.6, fz - 1),
+                                      color=(38, 38, 40, 255), material="Rubber"))
+        K.box(x0 + 30, x0 + 40, yc - 5, yc + 5, fz + 92, fz + 100, (240, 240, 230, 255), "Glow", "LightBrick",
               extra={"Brightness": 0.5, "InputChannel.InputAxis": "Headlight"})
+        # cushions on the foredeck
+        if self.eq >= 1 and sty["cushions"]:
+            xf = self.x_fd + 8
+            K.weld = self.chunk_of[self.sec_of(xf + 40)]
+            zf = ln.sheer_z(xf + 80)
+            hwf = min(ln.sheer_hw(xf + 80) - 22, 70)
+            if hwf > 25:
+                K.box(xf, xf + 80, -hwf, hwf, ln.sheer_z(xf), zf + 8, (46, 48, 52, 255), "Foam")
+            K.weld = w
 
     # ------------------------------------------------------------------ deck gear
     def gear(self):
@@ -875,9 +1003,9 @@ class Builder:
         # bow pulpit
         if eq >= 1:
             K.weld = self.chunk_of[self.sec_of(ln.X1 - 0.05 * ln.L)]
-            n = 3 + 2 * eq
+            n = 3 + 2 * eq + self.sty["stanchions"]
             xs = [ln.X0 + ln.L * (0.70 + 0.27 * j / (n - 1)) for j in range(n)]
-            h = 55 if not open_boat else 45
+            h = self.sty["rail_h"] * (0.8 if open_boat else 1.0)
             for s in (1, -1):
                 tops, mids = [], []
                 for x in xs:
@@ -889,7 +1017,7 @@ class Builder:
                 tops.append(tip)
                 for a, b in zip(tops, tops[1:]):
                     K.rod(a, b, rd, CHROME, extend=2)
-                if eq >= 2:
+                if eq >= 2 or (eq >= 1 and self.sty["mid_rail"]):
                     for a, b in zip(mids, mids[1:]):
                         K.rod(a, b, rd * 0.7, CHROME, extend=1)
             K.rod((tip[0], 0, tip[2] - h), tip, rd, CHROME)
@@ -897,18 +1025,19 @@ class Builder:
         if not open_boat:
             K.weld = self.chunk_of[0]
             n = 3 + 2 * eq
+            rh = self.sty["rail_h"] + 10
             xs = [ln.X0 + 12 + j * (0.33 * ln.L) / (n - 1) for j in range(n)]
             yr = ln.hw - 10
             for s in (1, -1):
                 tops = []
                 for x in xs:
-                    K.box(x - 2, x + 2, s * yr - 2, s * yr + 2, ln.D, ln.D + 70, CHROME, "Chrome")
-                    tops.append((x, s * yr, ln.D + 70))
+                    K.box(x - 2, x + 2, s * yr - 2, s * yr + 2, ln.D, ln.D + rh, CHROME, "Chrome")
+                    tops.append((x, s * yr, ln.D + rh))
                 K.rod(tops[0], tops[-1], 3.5, CHROME, extend=2)
                 if eq >= 1:
                     K.rod((xs[0], s * yr, ln.D + 35), (xs[-1], s * yr, ln.D + 35), 2.5, CHROME, extend=1)
-                K.rod((xs[0], s * yr, ln.D + 70), (xs[0], s * 0.65 * ln.hw, ln.D + 70), 3.5, CHROME, extend=2)
-                K.box(xs[0] - 2, xs[0] + 2, s * 0.65 * ln.hw - 2, s * 0.65 * ln.hw + 2, ln.D, ln.D + 70, CHROME,
+                K.rod((xs[0], s * yr, ln.D + rh), (xs[0], s * 0.65 * ln.hw, ln.D + rh), 3.5, CHROME, extend=2)
+                K.box(xs[0] - 2, xs[0] + 2, s * 0.65 * ln.hw - 2, s * 0.65 * ln.hw + 2, ln.D, ln.D + rh, CHROME,
                       "Chrome")
         # cleats
         for s in (1, -1):
@@ -919,7 +1048,7 @@ class Builder:
                 K.box(x - 3, x + 3, y - 2.5, y + 2.5, z + 3, z + 6, CHROME, "Chrome")
         # windlass + anchor
         if eq >= 1 and not open_boat:
-            xw = ln.X0 + 0.86 * ln.L
+            xw = ln.X0 + (0.905 if self.sty["gun_bow"] else 0.86) * ln.L
             K.weld = self.chunk_of[self.sec_of(xw)]
             wz = ln.sheer_z(xw)
             K.box(xw - 15, xw + 15, -15, 15, wz, wz + 16, STEEL, "Steel")
@@ -932,9 +1061,9 @@ class Builder:
             K.box(ra[0] + 22, ra[0] + 26, -2, 2, ra[2] - 40, ra[2] + 4, STEEL, "Steel")
             K.obox((ra[0] + 24, 0, ra[2] - 44), (0, 1, 0), (1, 0, 0), (34, 8, 4), STEEL, "Steel")
         # life rafts (military/cutter) - welded with their cradles AND the deck chunk
+        rafts = [ln.X0 + 0.25 * ln.L, ln.X0 + 0.25 * ln.L - 95][:self.sty["rafts"]]
         if eq >= 1 and not open_boat:
-            for s in (1, -1):
-                x = ln.X0 + 0.25 * ln.L
+            for s, x in [(s, x) for s in (1, -1) for x in rafts]:
                 K.weld = self.chunk_of[self.sec_of(x)]
                 y = s * (ln.hw - 42)
                 for dx in (-30, 30):
@@ -944,13 +1073,34 @@ class Builder:
                     for dx in (-25, 25):
                         K.rod((x + dx - 1, y, ln.D + 29), (x + dx + 1, y, ln.D + 29), 44, (200, 90, 30), "Plastic")
         # aft benches / engine hatch
-        if eq >= 2 and not open_boat:
+        if eq >= 2 and not open_boat and len(rafts) < 2 and self.sty["benches"]:
             K.weld = self.chunk_of[0]
             for s in (1, -1):
                 y0, y1 = sorted((s * 25, s * (ln.hw - 50)))
                 K.box(ln.X0 + 8, ln.X0 + 45, y0, y1, ln.D, ln.D + 38, P["cabin_d"], "Plastic")
                 K.box(ln.X0 + 9, ln.X0 + 44, y0, y1, ln.D + 38, ln.D + 45, (40, 40, 42, 255), "Rubber")
             K.box(ln.X0 + 100, ln.X0 + 200, -55, 55, ln.D, ln.D + 4, P["frame"], "Aluminium")
+        # portholes (cutter, below the deck forward) and hull numbers (patrol boats)
+        if eq >= 1 and self.kind == "cutter":
+            for j in range(self.sty["portholes"]):
+                xp = ln.X0 + (0.62 + 0.07 * j) * ln.L
+                K.weld = self.chunk_of[self.sec_of(xp)]
+                zp = ln.sheer_z(xp) - 0.32 * ln.D
+                for s in (1, -1):
+                    yp = s * (ln.hull_hw(xp, zp) + 1.0)
+                    K.obox((xp, yp, zp), (1, 0, 0), (0, s, 0), (16, 16, 1.5), CHROME, "Chrome", "ScalableZylinder",
+                           vf=0.785)
+                    K.obox((xp, yp + s * 0.8, zp), (1, 0, 0), (0, s, 0), (12, 12, 1.0), GLASS, "Glass",
+                           "ScalableZylinder", vf=0.785)
+        if eq >= 1 and self.kind == "military":
+            xn = ln.X0 + 0.83 * ln.L
+            K.weld = self.chunk_of[self.sec_of(xn)]
+            zn = ln.chine_z(xn) + (ln.sheer_z(xn) - ln.chine_z(xn)) * 0.55
+            for s in (1, -1):
+                yn = s * (ln.hull_hw(xn, zn) + 3.0)
+                K.obox((xn, yn, zn), (-1, 0, 0) if s > 0 else (1, 0, 0), (0, s, 0.05), (0.09 * ln.L, 30, 1),
+                       P["hull"], "Plastic", "TextBrick", extra={"Text": self.sty["hull_no"], "Font": "Orbitron",
+                                                                 "TextColor": P["text"]})
         # names on the hull
         if eq >= 1:
             for s in (1, -1):
@@ -985,7 +1135,63 @@ class Builder:
         self.gear()
         self.outboards()
         self.balance()
+        self.tune()
         return self.K
+
+    def tune(self):
+        """Engine and stabiliser strength from the boat's mass and size.
+
+        Reference: the user's tuned SEVER-4 (10.5 m x 3.3 m, ~12 t in this mass model):
+        roll / pitch thrusters 6, two outboards 10 each.  Stabiliser torque has to grow with
+        mass x size^2 and the lever arm with size, so the thrust goes with mass x size.
+        Engines get a bit more than SEVER-4 (power-to-weight of real planing boats)."""
+        m = self.K.mass()[0]
+        mr = m / 12000.0
+        roll = max(0.25, 6.0 * mr * (self.B / 330.0))
+        pitch = max(0.25, 6.0 * mr * (self.L / 1050.0))
+        for idx, which, k in getattr(self, "stab_thr", []):
+            self.K.v.bricks[idx].set("InputScale", round(k * (roll if which == "roll" else pitch), 2))
+        total = 26.0 * mr ** 0.7                      # SEVER-4 had 20 in total
+        fwd = round(max(2.5, total / self.n_out), 1)
+        for idx, k in self.main_thr:
+            self.K.v.bricks[idx].set("InputScale", round(fwd * k, 1))
+        self.thrust = (fwd, round(-fwd / 2, 1))
+        self.stab_k = (round(roll, 2), round(pitch, 2))
+
+
+# ----------------------------------------------------------------------------- variation
+STRIPES = [None, None, (170, 40, 36), (222, 120, 30), (40, 92, 172), (214, 180, 40), (226, 228, 230), (30, 120, 90)]
+
+
+def make_style(kind, size, color, seed):
+    """Look and layout choices: every seed gives a visibly different boat."""
+    r = random.Random("style-%d" % seed)
+    if kind == "motor":
+        outb = 1 if size != "L" else r.choice((1, 2))
+    elif kind == "cutter":
+        outb = r.choice((1, 2, 2))
+    else:
+        outb = r.choice((2, 2, 3)) if size != "S" else 2
+    sty = {
+        "cab_shift": r.uniform(-0.045, 0.045), "cab_len": r.uniform(0.85, 1.15), "cab_w": r.uniform(0.58, 0.70),
+        "zs": r.uniform(60, 80), "zr": r.uniform(124, 145), "rake": r.uniform(30, 65),
+        "win_w": r.choice((60, 75, 90, 120, 200)), "dome": r.random() < 0.65, "horns": r.random() < 0.6,
+        "antennas": r.choice((0, 1, 2, 2, 3)), "mast_aft": r.random() < 0.5, "mast_h": r.uniform(60, 110),
+        "yard": r.random() < 0.5, "rafts": r.choice((0, 1, 1, 2)), "benches": r.random() < 0.6,
+        "rail_h": r.uniform(48, 78), "mid_rail": r.random() < 0.6, "stanchions": r.choice((0, 1, 2)),
+        "stripe": r.choice(STRIPES), "bottom_red": r.random() < 0.35, "cab_tint": r.uniform(-20, 20),
+        "two_tone": r.random() < 0.35, "tower_h": r.uniform(40, 62), "console_x": r.uniform(0.39, 0.47),
+        "ttop": r.random() < 0.55 and size != "S", "outboards": outb,
+        "gun_bow": kind == "military" and size != "S" and r.random() < 0.45, "console_side": kind == "motor" and r.random() < 0.4,
+        "portholes": r.choice((0, 2, 3)), "hull_no": "%s-%d" % (r.choice("PKB"), r.randint(101, 989)),
+        "pedestal": r.random() < 0.6, "screens": r.choice((1, 2, 3)), "cushions": r.random() < 0.6,
+    }
+    if size == "S":                       # small hulls: keep the cabin low so they stay stiff
+        sty["zr"] = min(sty["zr"], 128.0)
+        sty["cab_w"] = min(sty["cab_w"], 0.64)
+        sty["tower_h"] = min(sty["tower_h"], 48.0)
+        sty["zs"] = min(sty["zs"], 70.0)
+    return sty
 
 
 # ----------------------------------------------------------------------------- station source

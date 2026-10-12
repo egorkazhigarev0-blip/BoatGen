@@ -1,8 +1,8 @@
 """BoatGen - boat generator for Brick Rigs.
 
-Run:  BoatGen.exe            (built with build_exe.bat)
-      python app.py          (window via pywebview)
-      python app.py --browser (no pywebview: opens the interface in the default browser)
+Run:  BoatGen.exe             (built by GitHub Actions / build_exe.bat)
+      python app.py           (own app window: Qt WebEngine, PySide6)
+      python app.py --browser (no PySide6: the same interface in an Edge/Chrome app window)
 """
 import base64
 import json
@@ -99,6 +99,7 @@ class Api:
         self._params = None
         self._saved = None
         self._lock = threading.Lock()
+        self._window = None
 
     # -- settings
     def get_state(self):
@@ -194,6 +195,20 @@ class Api:
         except Exception:
             return False
 
+    def toggle_fullscreen(self):
+        f = getattr(self, "_window", None)
+        if f is None:
+            return False
+        f()
+        return True
+
+    def open_url(self, url):
+        if not str(url).startswith("https://steamcommunity.com/"):
+            return False
+        import webbrowser
+        webbrowser.open(url)
+        return True
+
     def open_game_folder(self):
         return self.open_folder(game_vehicles_dir()) if os.path.isdir(game_vehicles_dir()) else False
 
@@ -218,10 +233,10 @@ def open_app_window(url):
     return False
 
 
-def run_browser(api, port=0, open_browser=True):
+def make_server(api, port=0):
+    """Local HTTP server: serves ui/ and answers POST /api/<method> with JSON."""
     import http.server
     import socketserver
-    import webbrowser
     ui = os.path.join(resource_dir(), "ui")
 
     class H(http.server.SimpleHTTPRequestHandler):
@@ -230,6 +245,10 @@ def run_browser(api, port=0, open_browser=True):
 
         def log_message(self, *a):
             pass
+
+        def end_headers(self):
+            self.send_header("Cache-Control", "no-store")
+            super().end_headers()
 
         def do_POST(self):
             if not self.path.startswith("/api/"):
@@ -251,7 +270,14 @@ def run_browser(api, port=0, open_browser=True):
 
     socketserver.TCPServer.allow_reuse_address = True
     srv = socketserver.ThreadingTCPServer(("127.0.0.1", port), H)
+    srv.daemon_threads = True
     url = "http://127.0.0.1:%d/index.html?browser=1" % srv.server_address[1]
+    return srv, url
+
+
+def run_browser(api, port=0, open_browser=True):
+    import webbrowser
+    srv, url = make_server(api, port)
     print("BoatGen:", url)
     if open_browser:
         if not open_app_window(url):
@@ -270,14 +296,94 @@ def log_error(text):
         pass
 
 
+def run_qt(api, test=False):
+    """BoatGen as a real desktop application: a Qt window with its own Chromium (QtWebEngine),
+    so it needs neither WebView2 nor a browser."""
+    os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--ignore-gpu-blocklist --autoplay-policy=no-user-gesture-required")
+    from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
+    from PySide6.QtGui import QDesktopServices, QIcon
+    from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
+    from PySide6.QtWebEngineWidgets import QWebEngineView
+    from PySide6.QtWidgets import QApplication, QMainWindow
+
+    srv, url = make_server(api)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    local = url.split("/index.html")[0]
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    app.setApplicationName("BoatGen")
+    icon_path = os.path.join(resource_dir(), "ui", "icon.png")
+
+    class Page(QWebEnginePage):
+        """Links that leave the app (Steam etc.) open in the system browser."""
+        def acceptNavigationRequest(self, qurl, nav_type, is_main):
+            if not qurl.toString().startswith(local):
+                QDesktopServices.openUrl(qurl)
+                return False
+            return super().acceptNavigationRequest(qurl, nav_type, is_main)
+
+        def createWindow(self, _type):
+            page = Page(self)
+            page.urlChanged.connect(lambda u: (QDesktopServices.openUrl(u), page.deleteLater()))
+            return page
+
+    class Bridge(QObject):
+        toggle = Signal()
+
+    win = QMainWindow()
+    win.setWindowTitle("BoatGen")
+    if os.path.isfile(icon_path):
+        win.setWindowIcon(QIcon(icon_path))
+    win.resize(1180, 800)
+    win.setMinimumSize(940, 660)
+    win.setStyleSheet("background:#0a111c;")
+    view = QWebEngineView()
+    page = Page(view)
+    view.setPage(page)
+    st = page.settings()
+    st.setAttribute(QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture, False)
+    st.setAttribute(QWebEngineSettings.WebAttribute.WebGLEnabled, True)
+    view.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+    win.setCentralWidget(view)
+
+    bridge = Bridge()
+
+    def toggle():
+        if win.isFullScreen():
+            win.showNormal()
+        else:
+            win.showFullScreen()
+    bridge.toggle.connect(toggle, Qt.ConnectionType.QueuedConnection)
+    api._window = bridge.toggle.emit
+
+    if test:
+        out = os.path.join(app_dir(), "guitest.txt")
+
+        def probe(n=[0]):
+            n[0] += 1
+
+            def got(res):
+                if res == "ok" or n[0] > 40:
+                    with open(out, "w") as f:
+                        f.write(str(res))
+                    app.quit()
+                else:
+                    QTimer.singleShot(1000, probe)
+            page.runJavaScript("window.__boatgen && document.querySelector('#startBtn') ? 'ok' : 'wait'", 0, got)
+        QTimer.singleShot(3000, probe)
+
+    view.setUrl(QUrl(url))
+    win.show()
+    app.exec()
+    srv.shutdown()
+
+
 def selftest():
     """CI check of the frozen exe: engine, data and the window library must load."""
     from engine.gen import generate as g
     for k in ("motor", "cutter", "military"):
         g(k, "M", "low", "dark", 1)
-    import webview  # noqa: F401
-    if sys.platform.startswith("win"):
-        from webview.platforms import winforms  # noqa: F401
+    from PySide6.QtWebEngineWidgets import QWebEngineView  # noqa: F401
     with open(os.path.join(app_dir(), "selftest.ok"), "w") as f:
         f.write("ok")
 
@@ -298,13 +404,12 @@ def main():
         run_browser(api, port, "--no-open" not in sys.argv)
         return
     try:
-        import webview
-        webview.create_window("BoatGen", os.path.join(resource_dir(), "ui", "index.html"), js_api=api,
-                              width=1180, height=800, min_size=(940, 660), background_color="#0B1220")
-        webview.start()
+        run_qt(api, "--guitest" in sys.argv)
     except Exception:
-        # no window library / WebView2 problem: log it and open the same interface in the browser
+        # Qt could not start: log it and open the same interface as an Edge/Chrome app window
         log_error(traceback.format_exc())
+        if "--guitest" in sys.argv:
+            sys.exit(1)
         run_browser(api)
 
 
